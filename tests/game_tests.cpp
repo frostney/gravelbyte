@@ -124,9 +124,9 @@ int main() {
   Check(std::abs(Loaded.ReferenceSplits[1] - 36) < .001f,
         "saved fastest run supplies sector benchmark");
   Game Slower;
-  LoadBest(Slower, EncodeBest(120.f, {24.f, 48.f, 72.f, 96.f, 120.f}));
+  LoadBest(Slower, EncodeBest(200.f, {40.f, 80.f, 120.f, 160.f, 200.f}));
   Slower.Restart();
-  Check(Slower.ReferenceSplits == DefaultSplits,
+  Check(Slower.ReferenceSplits == Slower.GetDefaultSplits(),
         "slower personal best does not replace built-in target");
   SavedRecord = EncodeBest(92.345f, {18.f, 36.f, 54.f, 74.f, 92.345f});
   SavedRecord.Splits[0] ^= 1;
@@ -137,7 +137,7 @@ int main() {
   SavedRecord.Course = 1;
   Check(DecodeBest(SavedRecord) == 0, "old course times are not comparable");
   Game Sector = Running();
-  Sector.Segment = SectorEnds[0];
+  Sector.Segment = Sector.SectorEnds[0];
   Sector.Furthest = Sector.Segment;
   Sector.CarPosition =
       Sector.Road[Sector.Segment].Position +

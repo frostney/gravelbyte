@@ -22,11 +22,13 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
   case GameMode::CarSelect:
     std::snprintf(StatusText, sizeof(StatusText),
                   "Choose car: %s, %s. Speed %d of 5, acceleration %d of 5, drift %d of 5. Higher "
-                  "drift means more sliding. Left and right change car; confirm chooses track.",
+                  "drift means more sliding. Steering assist %s. Left and right change car; "
+                  "confirm chooses track.",
                   GameState.GetCarSpecification().Name, GameState.GetCarSpecification().Difficulty,
                   GameState.GetCarSpecification().SpeedStatistic,
                   GameState.GetCarSpecification().AccelerationStatistic,
-                  GameState.GetCarSpecification().DriftStatistic);
+                  GameState.GetCarSpecification().DriftStatistic,
+                  GameState.SteeringAssist ? "on" : "off");
     break;
   case GameMode::TrackSelect:
     if (GameState.Unlocked(GameState.SelectedTrack))
@@ -37,7 +39,7 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
                     GameState.Best);
     else
       std::snprintf(StatusText, sizeof(StatusText),
-                    "Choose track: %s. Locked. Beat %s to unlock. Left and right browse tracks; "
+                    "Choose track: %s. Locked. Beat %s to unlock. Up and down browse tracks; "
                     "back to cars.",
                     TrackNames[GameState.SelectedTrack], TrackNames[GameState.SelectedTrack - 1]);
     break;
@@ -50,7 +52,8 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
     break;
   case GameMode::Paused:
     std::snprintf(StatusText, sizeof(StatusText),
-                  "Paused. Resume, retry, or return to car selection.");
+                  "%s. Selected: %s. Up and down select; confirm activates; back returns.",
+                  GameState.OptionsOpen ? "Options" : "Paused", GameState.MenuChoice());
     break;
   case GameMode::Finished:
     std::snprintf(StatusText, sizeof(StatusText),
@@ -84,6 +87,8 @@ EMSCRIPTEN_KEEPALIVE void GravelbyteUpdate(float DeltaTimeSeconds, unsigned Butt
   const unsigned Edges = Buttons & ~Previous;
   Previous = Buttons;
   DrivingInput PlayerInput;
+  PlayerInput.Up = Buttons & 512;
+  PlayerInput.Down = Buttons & 1024;
   PlayerInput.Left = Buttons & 1;
   PlayerInput.Right = Buttons & 2;
   PlayerInput.Throttle = Buttons & 4;
@@ -99,12 +104,15 @@ EMSCRIPTEN_KEEPALIVE void GravelbyteSuspend() {
   Previous = 0;
   if (GameState.CurrentMode == GameMode::Racing || GameState.CurrentMode == GameMode::Countdown) {
     GameState.ResumeMode = GameState.CurrentMode;
+    GameState.OptionsOpen = false;
+    GameState.MenuSelection = 0;
     GameState.CurrentMode = GameMode::Paused;
   }
 }
 EMSCRIPTEN_KEEPALIVE int GravelbyteCar() { return GameState.SelectedCar; }
 EMSCRIPTEN_KEEPALIVE int GravelbyteTrack() { return GameState.SelectedTrack; }
 EMSCRIPTEN_KEEPALIVE int GravelbyteMode() { return int(GameState.CurrentMode); }
+EMSCRIPTEN_KEEPALIVE float GravelbyteEngineFrequency() { return GameState.EngineFrequency(); }
 EMSCRIPTEN_KEEPALIVE float GravelbyteSpeed() { return GameState.Speed; }
 EMSCRIPTEN_KEEPALIVE int GravelbyteMuted() { return GameState.Muted; }
 EMSCRIPTEN_KEEPALIVE void GravelbyteToggleAudio() { GameState.ToggleAudio(); }

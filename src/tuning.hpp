@@ -32,7 +32,8 @@ constexpr int ChasePitchSine = 3213, ChasePitchCosine = 16066;
 constexpr float SceneryDetailDistance = 72.f;
 constexpr float SnowSceneryDetailDistance = 48.f;
 constexpr int StatisticsTop = 84, StatisticsRowHeight = 8, StatisticBarCount = 5;
-constexpr unsigned SaveMagic = 0x4752564c, SaveVersion = 2, MutedFlag = 0x100;
+constexpr unsigned SaveMagic = 0x4752564c, SaveVersion = 4, MutedFlag = 0x100, AssistFlag = 0x200,
+                   GhostHiddenFlag = 0x400, NotesHiddenFlag = 0x800, DriftHintFlag = 0x1000;
 constexpr unsigned SelectionMask = 0xff, HashOffsetBasis = 2166136261u, HashPrime = 16777619u;
 constexpr unsigned MaximumRecordMilliseconds = 86400000;
 } // namespace GravelByte::Tuning
@@ -60,3 +61,25 @@ namespace GravelByte::Tuning::Telemetry {
 constexpr unsigned MinimumFrameRateIntervalMicroseconds = 33334,
                    ReportIntervalMicroseconds = 2000000;
 }
+
+namespace GravelByte::Tuning::Driving {
+constexpr float AssistMinimumSpeed = 6.f, AssistReferenceSpeed = 8.f;
+constexpr float AssistStrength = 1.2f, AssistMaximumSteering = .22f;
+constexpr float PaceLeadSeconds = 2.8f, PaceMinimumDistance = 42.f, PaceMaximumDistance = 105.f;
+constexpr int PacePastNodes = 2;
+constexpr float TighteningRatio = 1.35f, DoubleApexRatio = .6f;
+constexpr float CrestRadiusNodes = 2.f, CrestHeight = 2.6f;
+constexpr int WidthTransitionNodes = 4;
+constexpr float BridgeNarrowing = .9f, TunnelNarrowing = .35f;
+} // namespace GravelByte::Tuning::Driving
+namespace GravelByte::Tuning::Audio {
+constexpr int GearCount = 5;
+constexpr float IdleFrequency = 75.f, GearFrequencyRange = 155.f, GearFrequencyOffset = 5.f;
+constexpr float LimiterSpeedFraction = .97f, LimiterPulseRate = 35.f;
+constexpr float LimiterHighFrequency = 240.f, LimiterLowFrequency = 135.f;
+} // namespace GravelByte::Tuning::Audio
+namespace GravelByte::Tuning::Feedback {
+constexpr unsigned Brightness = 100;
+constexpr float FinishSeconds = .4f, SplitSeconds = .8f;
+constexpr float CountdownBase = 20.f, CountdownAmplitude = 45.f, CountdownPulseRate = 8.f;
+} // namespace GravelByte::Tuning::Feedback

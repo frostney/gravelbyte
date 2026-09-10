@@ -27,13 +27,13 @@ int main() {
         "locked track can be browsed but not started");
   GameState.SelectCarAndTrack(0, 0);
   GameState.Records[0].Splits = GameState.GetDefaultSplits();
-  Check(!GameState.Unlocked(1), "matching the target is not beating it");
+  Check(GameState.Unlocked(1), "matching the bronze threshold earns the medal");
   for (float &TimeValue : GameState.Records[0].Splits)
     TimeValue *= .99f;
   Check(GameState.Unlocked(1) && !GameState.Unlocked(2), "any car unlocks next track globally");
   GameState.SelectCarAndTrack(1, 1);
-  GameState.Records[4].Splits = GameState.GetDefaultSplits();
-  for (float &TimeValue : GameState.Records[4].Splits)
+  GameState.Records[Game::RecordIndex(1, 1, 0, false)].Splits = GameState.GetDefaultSplits();
+  for (float &TimeValue : GameState.Records[Game::RecordIndex(1, 1, 0, false)].Splits)
     TimeValue *= .99f;
   GameState.ToggleAudio();
   SaveData Save = EncodeSave(GameState);
@@ -42,13 +42,9 @@ int main() {
         "audio and progression survive reload");
   SaveData Legacy{};
   FILE *Fixture = std::fopen(GRAVELBYTE_V1_FIXTURE, "rb");
-  Check(Fixture && std::fread(&Legacy, sizeof(Legacy), 1, Fixture) == 1,
-        "read pre-update save fixture");
+  Check(Fixture && std::fread(&Legacy, 200, 1, Fixture) == 1, "read pre-update save fixture");
   std::fclose(Fixture);
-  Check(LoadSave(Restored, Legacy) && !Restored.Muted && Restored.SelectedCar == 2 &&
-            Restored.SelectedTrack == 1 && Restored.Unlocked(1) &&
-            std::abs(Restored.Records[1].Splits.back() - 92.f) < .001f,
-        "v1 saves migrate selections, records and earned unlocks");
+  Check(!LoadSave(Restored, Legacy), "old course saves are explicitly rejected after the hard cut");
   GameState.CurrentMode = GameMode::Title;
   bool Seen[TrackCount]{};
   for (int Index = 0; Index < 2400; ++Index) {

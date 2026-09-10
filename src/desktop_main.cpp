@@ -69,7 +69,7 @@ int main(int ArgumentCount, char **Arguments) {
     GameState.CameraHeight = GameState.CarPosition.CoordinateY;
     GameState.Pitch = (GameState.Road[Segment + 1].Position.CoordinateY -
                        GameState.Road[Segment].Position.CoordinateY) /
-                      TrackSegmentLength;
+                      GameState.SegmentLength;
     GameState.Roll = GameState.Road[Segment].Bank;
     GameState.CurrentMode = GameMode::Racing;
     GameState.Elapsed = 32.45f;
@@ -107,24 +107,13 @@ int main(int ArgumentCount, char **Arguments) {
     SDL_Quit();
     return 1;
   }
-  SavePath = std::string(Preferences) + "records-v1.best";
+  SavePath = std::string(Preferences) + "records-v4.best";
   SDL_free(Preferences);
   if (FILE *File = std::fopen(SavePath.c_str(), "rb")) {
     SaveData SavedRecord{};
     if (std::fread(&SavedRecord, sizeof(SavedRecord), 1, File) == 1)
       LoadSave(GameState, SavedRecord);
     std::fclose(File);
-  } else if (char *LegacyPreferences = SDL_GetPrefPath("picorally", "picorally")) {
-    const std::string LegacyPath = std::string(LegacyPreferences) + "stage-v3.best";
-    SDL_free(LegacyPreferences);
-    if (FILE *File = std::fopen(LegacyPath.c_str(), "rb")) {
-      SaveRecord Legacy{};
-      if (std::fread(&Legacy, sizeof(Legacy), 1, File) == 1) {
-        LoadBest(GameState, Legacy);
-        GameState.SaveRequested = GameState.Best > 0;
-      }
-      std::fclose(File);
-    }
   }
   SDL_Window *Window = SDL_CreateWindow("gravelbyte — PicoSystem preview", SDL_WINDOWPOS_CENTERED,
                                         SDL_WINDOWPOS_CENTERED, 720, 720,
@@ -186,6 +175,8 @@ int main(int ArgumentCount, char **Arguments) {
       }
     }
     const Uint8 *Keys = SDL_GetKeyboardState(nullptr);
+    PlayerInput.Up = Keys[SDL_SCANCODE_UP];
+    PlayerInput.Down = Keys[SDL_SCANCODE_DOWN];
     PlayerInput.Left = Keys[SDL_SCANCODE_LEFT];
     PlayerInput.Right = Keys[SDL_SCANCODE_RIGHT];
     PlayerInput.Throttle = Keys[SDL_SCANCODE_Z] || Keys[SDL_SCANCODE_UP];
@@ -198,8 +189,7 @@ int main(int ArgumentCount, char **Arguments) {
     Save();
     if (AudioDevice) {
       SDL_LockAudioDevice(AudioDevice);
-      SoundFrequency =
-          Tuning::Audio::BaseFrequency + GameState.Speed * Tuning::Audio::SpeedFrequency;
+      SoundFrequency = GameState.EngineFrequency();
       SoundVolume = (!GameState.Muted && (GameState.CurrentMode == GameMode::Racing ||
                                           GameState.CurrentMode == GameMode::Title ||
                                           GameState.CurrentMode == GameMode::Finished))

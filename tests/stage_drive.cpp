@@ -75,7 +75,9 @@ int main(int ArgumentCount, char **Arguments) {
       if (GameState.SplitCount != SectorCount ||
           !(GameState.Splits[0] > 0 && GameState.Splits[0] < GameState.Splits[1] &&
             GameState.Splits[1] < GameState.Splits[2]) ||
-          GameState.Jumps < 1 || AirFrames < 2 || MaximumAirborneFrames > 2.f || GameState.Airborne)
+          (GetStageLayout(Track).Crest >= 0 && (GameState.Jumps < 1 || AirFrames < 2)) ||
+          (Track == 1 && (GameState.Jumps != 0 || AirFrames != 0)) || MaximumAirborneFrames > 2.f ||
+          GameState.Airborne)
         return 1;
       for (int Index = 1; Index < SectorCount; ++Index)
         if (GameState.Splits[Index] <= GameState.Splits[Index - 1])
@@ -98,8 +100,8 @@ int main(int ArgumentCount, char **Arguments) {
         if (Prior.CurrentMode != GameMode::Finished ||
             Prior.Elapsed >= Prior.GetDefaultSplits().back())
           return 1;
-        GameState.Records[Earlier * CarCount + CarIndex] =
-            Prior.Records[Earlier * CarCount + CarIndex];
+        GameState.Records[Game::RecordIndex(Earlier, CarIndex, 0, false)] =
+            Prior.Records[Game::RecordIndex(Earlier, CarIndex, 0, false)];
       }
       if (!LoadSave(Restored, EncodeSave(GameState)))
         return 1;

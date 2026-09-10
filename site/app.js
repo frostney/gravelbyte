@@ -4,7 +4,7 @@ const canvas = findElement('game'),
     alpha: false,
   }),
   framebufferImage = renderingContext.createImageData(120, 120);
-const storageKey = 'gravelbyte.records.v1';
+const storageKey = 'gravelbyte.records.v4';
 let gameEngine,
   playing = false,
   muted = false,
@@ -22,9 +22,9 @@ let menuRelease = false;
 const keyBits = {
   ArrowLeft: 1,
   ArrowRight: 2,
-  ArrowUp: 4,
+  ArrowUp: 4 | 512,
   KeyZ: 4 | 32,
-  ArrowDown: 8,
+  ArrowDown: 8 | 1024,
   KeyX: 8,
   Space: 16,
   Enter: 32,
@@ -41,7 +41,7 @@ function useInput(input) {
     keyboard:
       '← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause · M sound · Space records after finishing',
     gamepad:
-      'D-pad / left stick steer · RT / A gas · LT / B brake · X drift · A confirm · B back · Start pause · X sound in title/pause or records after finishing',
+      'D-pad / left stick steer · RT / A gas · LT / B brake · X drift · A confirm · B back · Start pause · X assist in car menu / records at finish; sound in Options',
     touch:
       'Hold arrows to steer; Gas, Brake and Drift to drive. Go confirms; Back returns; Pause stops. Records shows splits after finishing.',
   };
@@ -49,9 +49,9 @@ function useInput(input) {
   if (input === 'keyboard') {
     const bindings = [
       [['←', '→'], 'steer / select'],
-      [['↑', 'Z'], 'gas'],
-      [['↓', 'X'], 'brake'],
-      [['␣'], 'drift / records'],
+      [['↑', 'Z'], 'gas / menu ↑'],
+      [['↓', 'X'], 'brake / menu ↓'],
+      [['␣'], 'drift / assist / records'],
       [['↵'], 'confirm / retry'],
       [['Esc'], 'back'],
       [['P'], 'pause'],
@@ -154,8 +154,9 @@ for (const button of document.querySelectorAll('[data-bit]')) {
     canvas.focus();
     startAudio();
     button.setPointerCapture(event.pointerId);
-    pulses |= Number(button.dataset.bit);
-    pointers.set(event.pointerId, Number(button.dataset.bit));
+    const buttonBit = navigationBit(Number(button.dataset.bit));
+    pulses |= buttonBit;
+    pointers.set(event.pointerId, buttonBit);
     button.classList.add('pressed');
     touchBits = [...pointers.values()].reduce(
       (accumulatedInputs, inputValue) => accumulatedInputs | inputValue,
@@ -217,6 +218,8 @@ function gamepad() {
   for (const gamepadState of navigator.getGamepads?.() ?? []) {
     if (!gamepadState || gamepadState.mapping !== 'standard') continue;
     const held = (index) => !!gamepadState.buttons[index]?.pressed;
+    if (held(12) || gamepadState.axes[1] < -0.25) inputBits |= 512;
+    if (held(13) || gamepadState.axes[1] > 0.25) inputBits |= 1024;
     if (held(14) || gamepadState.axes[0] < -0.25) inputBits |= 1;
     if (held(15) || gamepadState.axes[0] > 0.25) inputBits |= 2;
     if (held(0) || held(7)) inputBits |= 4;
@@ -306,7 +309,25 @@ function tick(timestampMilliseconds) {
       document
         .querySelectorAll('.menu-control')
         .forEach((inputValue) => (inputValue.hidden = race));
-      findElement('records').hidden = mode !== 6;
+      findElement('records').hidden = mode !== 6 && mode !== 1;
+      findElement('records').textContent = mode === 1 ? 'Assist' : 'Records';
+      for (const [bit, label] of [
+        [1, mode === 2 || mode === 5 ? '▲' : '◀'],
+        [2, mode === 2 || mode === 5 ? '▼' : '▶'],
+      ]) {
+        const button = document.querySelector(`#touch [data-bit="${bit}"]`);
+        button.textContent = label;
+        button.setAttribute(
+          'aria-label',
+          mode === 2 || mode === 5
+            ? bit === 1
+              ? 'Previous choice'
+              : 'Next choice'
+            : bit === 1
+              ? 'Steer left'
+              : 'Steer right',
+        );
+      }
       const menuHadFocus = findElement('accessible-menu').contains(document.activeElement);
       updateAccessibleMenu(mode);
       if (mode === 3 && menuHadFocus) canvas.focus();
@@ -328,7 +349,7 @@ function tick(timestampMilliseconds) {
         0.03,
       );
       oscillator.frequency.setTargetAtTime(
-        65 + gameEngine._GravelbyteSpeed() * 8,
+        gameEngine._GravelbyteEngineFrequency(),
         engineAudioContext.currentTime,
         0.03,
       );
@@ -338,8 +359,15 @@ function tick(timestampMilliseconds) {
   }
   requestAnimationFrame(tick);
 }
+function navigationBit(bit) {
+  return [2, 5].includes(lastMode) && bit === 1
+    ? 512
+    : [2, 5].includes(lastMode) && bit === 2
+      ? 1024
+      : bit;
+}
 function menuInput(bit) {
-  if (gameEngine && playing) menuCommands.push(bit);
+  if (gameEngine && playing) menuCommands.push(navigationBit(bit));
 }
 for (const [elementIdentifier, bit] of [
   ['menu-previous', 1],
@@ -350,19 +378,30 @@ for (const [elementIdentifier, bit] of [
   findElement(elementIdentifier).addEventListener('click', () => menuInput(bit));
 function updateAccessibleMenu(mode) {
   findElement('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(mode);
-  const select = mode === 1 || mode === 2;
+  const select = [1, 2, 5].includes(mode);
   for (const elementIdentifier of ['menu-previous', 'menu-next'])
     findElement(elementIdentifier).hidden = !select;
-  findElement('menu-previous').textContent = mode === 1 ? 'Previous car' : 'Previous track';
-  findElement('menu-next').textContent = mode === 1 ? 'Next car' : 'Next track';
+  findElement('menu-previous').textContent =
+    mode === 1 ? 'Previous car' : mode === 2 ? 'Previous track' : 'Previous choice';
+  findElement('menu-next').textContent =
+    mode === 1 ? 'Next car' : mode === 2 ? 'Next track' : 'Next choice';
   findElement('menu-confirm').textContent =
-    mode === 0 ? 'Choose car' : mode === 1 ? 'Choose track' : mode === 2 ? 'Start race' : 'Retry';
+    mode === 0
+      ? 'Choose car'
+      : mode === 1
+        ? 'Choose track'
+        : mode === 2
+          ? 'Start race'
+          : mode === 5
+            ? 'Select option'
+            : 'Retry';
   findElement('menu-confirm').setAttribute('aria-disabled', 'false');
   findElement('menu-back').hidden = mode === 0;
   findElement('menu-back').textContent =
-    mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : 'Choose car';
-  findElement('menu-aux').hidden = mode !== 6 && mode !== 5;
-  findElement('menu-aux').textContent = mode === 5 ? 'Resume' : 'Toggle checkpoint records';
+    mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : mode === 5 ? 'Back' : 'Choose car';
+  findElement('menu-aux').hidden = mode !== 6 && mode !== 5 && mode !== 1;
+  findElement('menu-aux').textContent =
+    mode === 5 ? 'Resume' : mode === 1 ? 'Toggle steering assist' : 'Toggle checkpoint records';
 }
 findElement('menu-aux').addEventListener('click', () => menuInput(lastMode === 5 ? 64 : 256));
 useInput(activeInput);

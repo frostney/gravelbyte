@@ -40,18 +40,19 @@ int main() {
   }
   Check(Speeds[0] < Speeds[1] && Speeds[1] < Speeds[2],
         "acceleration bars match measured acceleration");
-  for (int Index = 0; Index < CarCount * TrackCount; ++Index)
+  for (int Index = 0; Index < RecordCount; ++Index)
     for (int Split = 0; Split < SectorCount; ++Split)
       GameState.Records[Index].Splits[Split] = float(20 * Split + 10 + Index);
   GameState.SelectCarAndTrack(2, 2);
   SaveData Save = EncodeSave(GameState);
   Game Restored;
-  Check(LoadSave(Restored, Save), "nine records load");
+  Check(LoadSave(Restored, Save), "all route and assist records load");
   Check(Restored.SelectedCar == 2 && Restored.SelectedTrack == 2, "selections persist");
   for (int Track = 0; Track < TrackCount; ++Track)
     for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex) {
       Restored.SelectCarAndTrack(CarIndex, Track);
-      Check(std::abs(Restored.Best - float(90 + Track * 3 + CarIndex)) < .001f,
+      Check(std::abs(Restored.Best - float(90 + Game::RecordIndex(Track, CarIndex, 0, false))) <
+                .001f,
             "records isolated by car and track");
     }
   for (size_t Byte = 0; Byte < sizeof(Save); ++Byte) {

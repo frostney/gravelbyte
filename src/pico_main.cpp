@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 #include "picosystem.hpp"
 #include "save_journal.hpp"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #if defined(GRAVELBYTE_BENCHMARK) || defined(GRAVELBYTE_SMOKE)
@@ -30,7 +31,7 @@ static_assert(PICO_FLASH_SIZE_BYTES == 16 * 1024 * 1024,
               "Build for pimoroni_picosystem: saves require its 16 MiB flash");
 static constexpr uint32_t SaveOffset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
 static constexpr uint32_t JournalOffset = SaveOffset - FLASH_SECTOR_SIZE;
-alignas(4) static uint8_t SavePage[FLASH_PAGE_SIZE];
+alignas(4) static uint8_t SavePage[GravelByte::SaveProgramBytes];
 static const GravelByte::SaveSlot &SaveSlot(int Index) {
   return *reinterpret_cast<const GravelByte::SaveSlot *>(XIP_BASE + JournalOffset +
                                                          Index * FLASH_SECTOR_SIZE);
@@ -47,10 +48,14 @@ static void WriteSlot(int Target, const GravelByte::SaveSlot &Slot) {
 [[maybe_unused]] static void PersistBest() {
   static uint32_t RetryAt = 0;
   const uint32_t Now = picosystem::time_us();
-  if (!GameState.SaveRequested || (RetryAt && int32_t(Now - RetryAt) < 0))
+  if (GameState.CurrentMode == GravelByte::GameMode::Racing || !GameState.SaveRequested ||
+      (RetryAt && int32_t(Now - RetryAt) < 0))
     return;
-  const auto SavedRecord = GravelByte::EncodeSave(GameState);
-  const auto Result = GravelByte::StoreSave(SavedRecord, SaveSlot(0), SaveSlot(1), WriteSlot);
+  // Keep the expanded journal off the PicoSystem's small interrupt stack.
+  static GravelByte::SaveSlot PendingSave;
+  GravelByte::EncodeSave(GameState, PendingSave.Data);
+  const auto Result =
+      GravelByte::StorePreparedSave(PendingSave, SaveSlot(0), SaveSlot(1), WriteSlot);
   if (Result != GravelByte::SaveResult::Failed) {
     GameState.SaveRequested = false;
     RetryAt = 0;
@@ -59,7 +64,7 @@ static void WriteSlot(int Target, const GravelByte::SaveSlot &Slot) {
 #ifdef GRAVELBYTE_SMOKE
       const int Current = GravelByte::NewestSlot(SaveSlot(0), SaveSlot(1));
       std::printf("SAVE_OK count=%u version=%lu muted=%d slot=%d sequence=%lu\n", VerifiedSaves,
-                  (unsigned long)SavedRecord.Version, GameState.Muted, Current,
+                  (unsigned long)PendingSave.Data.Version, GameState.Muted, Current,
                   (unsigned long)SaveSlot(Current).Sequence);
 #endif
     }
@@ -73,10 +78,6 @@ void init() {
   const int Current = GravelByte::NewestSlot(SaveSlot(0), SaveSlot(1));
   if (Current >= 0) {
     GravelByte::LoadSave(GameState, SaveSlot(Current).Data);
-  } else {
-    const auto *Saved = reinterpret_cast<const GravelByte::SaveRecord *>(XIP_BASE + SaveOffset);
-    if (!GravelByte::LoadSave(GameState, *reinterpret_cast<const GravelByte::SaveData *>(Saved)))
-      GravelByte::LoadBest(GameState, *Saved);
   }
 #ifdef GRAVELBYTE_BENCHMARK
   // Measure the normal audio workload independently of the player's saved mute
@@ -94,6 +95,8 @@ void update(uint32_t) {
       (Now - LastUpdateMicroseconds) * GravelByte::Tuning::SecondsPerMicrosecond;
   LastUpdateMicroseconds = Now;
   GravelByte::DrivingInput PlayerInput{};
+  PlayerInput.Up = button(UP);
+  PlayerInput.Down = button(DOWN);
   PlayerInput.Left = button(LEFT);
   PlayerInput.Right = button(RIGHT);
   PlayerInput.Throttle = button(A);
@@ -117,13 +120,16 @@ void update(uint32_t) {
   static int PreviousPhase = -1;
   const int Phase = int((Now - SmokeStart) / 1000000);
   PlayerInput =
-      Phase >= 14 ? GravelByte::CalculateDrivingInput(GameState) : GravelByte::DrivingInput{};
+      Phase >= 19 ? GravelByte::CalculateDrivingInput(GameState) : GravelByte::DrivingInput{};
   if (Phase != PreviousPhase) {
-    PlayerInput.Auxiliary = Phase == 2 || Phase == 3 || Phase == 11 || Phase == 12;
-    PlayerInput.Action = Phase == 4 || Phase == 5 || Phase == 6;
+    PlayerInput.Auxiliary = Phase == 2 || Phase == 3;
+    PlayerInput.Action =
+        Phase == 4 || Phase == 5 || Phase == 6 || Phase == 13 || Phase == 14 || Phase == 16;
+    PlayerInput.Down = Phase == 11 || Phase == 12 || Phase == 15;
+    PlayerInput.Back = Phase == 17;
     PlayerInput.Right = Phase == 5;
-    PlayerInput.Pause = Phase == 10 || Phase == 13;
-    if (Phase == 20)
+    PlayerInput.Pause = Phase == 10 || Phase == 18;
+    if (Phase == 24)
       std::printf("SMOKE_DONE mode=%d saves=%u racing=%d\n", int(GameState.CurrentMode),
                   VerifiedSaves, GameState.CurrentMode == GravelByte::GameMode::Racing);
     PreviousPhase = Phase;
@@ -175,10 +181,26 @@ void update(uint32_t) {
     else if (GameState.Slip > 2.5f)
       play(voice(0, 0, 80, 10, 0, 0, 0, 70, 10), 400 + int(GameState.Slip * 30), 70, 28);
     else
-      play(voice(0, 0, 80, 10, 0, 0, 0, 12, 12),
-           int(GravelByte::Tuning::Audio::BaseFrequency) +
-               int(GameState.Speed * GravelByte::Tuning::Audio::SpeedFrequency),
-           75, 22);
+      play(voice(0, 0, 80, 10, 0, 0, 0, 12, 12), int(GameState.EngineFrequency()), 75, 22);
+  }
+  if (GameState.CurrentMode == GravelByte::GameMode::Countdown) {
+    const uint8_t Amber =
+        uint8_t(GravelByte::Tuning::Feedback::CountdownBase +
+                GravelByte::Tuning::Feedback::CountdownAmplitude *
+                    (1.f + std::sin(GameState.Countdown *
+                                    GravelByte::Tuning::Feedback::CountdownPulseRate)));
+    led(Amber, Amber / 2, 0);
+  } else if (GameState.CurrentMode == GravelByte::GameMode::Finished &&
+             GameState.CinematicTime < GravelByte::Tuning::Feedback::FinishSeconds) {
+    led(GravelByte::Tuning::Feedback::Brightness, GravelByte::Tuning::Feedback::Brightness,
+        GravelByte::Tuning::Feedback::Brightness);
+  } else if (GameState.CurrentMode == GravelByte::GameMode::Racing &&
+             GameState.SplitMessage > GravelByte::Tuning::Physics::MessageSeconds -
+                                          GravelByte::Tuning::Feedback::SplitSeconds) {
+    led(GameState.SplitDelta > 0 ? GravelByte::Tuning::Feedback::Brightness : 0,
+        GameState.SplitDelta <= 0 ? GravelByte::Tuning::Feedback::Brightness : 0, 0);
+  } else {
+    led(0, 0, 0);
   }
   if (stats.tick_us && GameState.CurrentMode == GravelByte::GameMode::Racing) {
     ++Frames;
