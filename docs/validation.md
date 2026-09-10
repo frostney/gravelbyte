@@ -1,5 +1,9 @@
 # Validation
 
+The table below is the **pre-cinematics baseline**. It does not certify the
+current update. See [the update design and defect analysis](cinematics-and-landmarks.md);
+new full-device results are being collected before publication.
+
 This file records acceptance evidence and outstanding checks. Native checks are
 not a substitute for PicoSystem telemetry or physical touchscreen/gamepad testing.
 

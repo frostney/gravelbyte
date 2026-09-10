@@ -15,14 +15,13 @@ static Renderer renderer;
 static std::array<uint16_t, W * H> framebuffer;
 static std::array<uint32_t, W * H> rgba;
 static std::string save_path;
-static bool muted = false;
 static float audio_phase = 0;
 static SDL_AudioDeviceID audio_device = 0;
 static float sound_frequency = 70, sound_volume = 0;
 static void audio(void *, Uint8 *stream, int bytes) {
   auto *samples = reinterpret_cast<int16_t *>(stream);
   for (int i = 0; i < bytes / 2; ++i) {
-    audio_phase += sound_frequency / 22050.f;
+    audio_phase += sound_frequency / float(tuning::audio::SampleRate);
     if (audio_phase >= 1)
       audio_phase -= 1;
     samples[i] = int16_t((audio_phase < .45f ? 1 : -1) * sound_volume * 1800);
@@ -85,6 +84,10 @@ int main(int argc, char **argv) {
     }
     if (argc > 4 && std::strcmp(argv[4], "pause") == 0)
       game.mode = Mode::Paused;
+    if (argc > 7)
+      game.cinematic_time = std::atof(argv[7]);
+    if (argc > 8)
+      game.menu_rotation = std::atof(argv[8]);
     renderer.render(game, framebuffer.data());
     screenshot(argc > 2 ? argv[2] : "frame.ppm");
     std::printf("Captured %d triangles; %d dropped\n", renderer.face_count, renderer.dropped);
@@ -140,7 +143,7 @@ int main(int argc, char **argv) {
     return 1;
   }
   SDL_AudioSpec spec{};
-  spec.freq = 22050;
+  spec.freq = tuning::audio::SampleRate;
   spec.format = AUDIO_S16SYS;
   spec.channels = 1;
   spec.samples = 512;
@@ -168,8 +171,10 @@ int main(int argc, char **argv) {
           input.pause = true;
         if (e.key.keysym.sym == SDLK_F1)
           diagnostics = !diagnostics;
+        if (e.key.keysym.sym == SDLK_SPACE)
+          input.auxiliary = true;
         if (e.key.keysym.sym == SDLK_m)
-          muted = !muted;
+          input.mute = true;
       }
     }
     const Uint8 *keys = SDL_GetKeyboardState(nullptr);
@@ -185,8 +190,11 @@ int main(int argc, char **argv) {
     save();
     if (audio_device) {
       SDL_LockAudioDevice(audio_device);
-      sound_frequency = 65 + game.speed * 8;
-      sound_volume = (!muted && game.mode == Mode::Racing) ? (game.impact > 0 ? .7f : .25f) : 0;
+      sound_frequency = tuning::audio::BaseFrequency + game.speed * tuning::audio::SpeedFrequency;
+      sound_volume = (!game.muted && (game.mode == Mode::Racing || game.mode == Mode::Title ||
+                                      game.mode == Mode::Finished))
+                         ? (game.impact > 0 ? .7f : .25f)
+                         : 0;
       SDL_UnlockAudioDevice(audio_device);
     }
     renderer.render(game, framebuffer.data(), dt > 0 ? int(1 / dt) : 0, diagnostics);

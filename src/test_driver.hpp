@@ -6,12 +6,7 @@
 namespace rally {
 // Shared by host course tests and the optional hardware benchmark firmware.
 // It only supplies public driving inputs; it cannot move the car or finish a run.
-inline Input test_driver(const Game &game) {
-  if (game.mode == Mode::Title || game.mode == Mode::CarSelect || game.mode == Mode::TrackSelect) {
-    Input start{};
-    start.action = true;
-    return start;
-  }
+inline Input driving_input(const Game &game) {
   // Plan braking from distance to each bend, instead of slowing to the
   // tightest corner speed for the entire next 72 metres.
   float desired = game.spec().max_speed - 4.f;
@@ -36,5 +31,13 @@ inline Input test_driver(const Game &game) {
   input.left = error < -.025f;
   input.right = error > .025f;
   return input;
+}
+inline Input test_driver(const Game &game) {
+  if (game.mode == Mode::Title || game.mode == Mode::CarSelect || game.mode == Mode::TrackSelect) {
+    Input start{};
+    start.action = true;
+    return start;
+  }
+  return driving_input(game);
 }
 } // namespace rally

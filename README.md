@@ -12,14 +12,26 @@ Choose a car, pick a course and beat five split times across a 1.8km stage.
 | Torr | Standard | Original demanding rally hatch handling |
 | Kite | Expert | Faster, lower coupe with more lateral slip |
 
-Bracken Ridge keeps the original forest course. Sunmeadow Run adds open summer
-countryside and fast crests. Frostpine Pass adds snow, mountain bends and visible
-blue ice with reduced traction. Every car/course pair has its own default target
+Bracken Ridge crosses a river bridge through the forest. Sunmeadow Run follows
+sandy beaches and coastal water. Frostpine Pass winds through snowy mountains
+and a tunnel, with visible blue ice reducing traction. Every car/course pair has its own default target
 and personal record. Higher DRIFT means the car slides more readily.
 
 The car selector shows a rotating model, name, difficulty and three stat bars.
 No selection counters or numeric stat fractions. Passed progress markers use the
 same green/red result colour as the unobtrusive signed split popup.
+
+Browse all tracks in the existing left/right selector. Beat a track's default
+finish target with any car to unlock the next for all cars. Existing qualifying
+records count; personal bests never raise the unlocking requirement.
+
+The title cycles through driving demonstrations with tracking, roadside and
+raised cameras. Press A on PicoSystem (Enter on keyboard, Go on touch) to continue.
+After finishing, the actual run replays with records hidden. X toggles the five
+gate comparisons against the default target and the prior personal best; Space
+on keyboard or Records on touch does the same. A retries, B returns to tracks.
+Sound can be toggled on the title/pause screens with X (M on keyboard), or from
+the browser's mute button. The setting persists alongside records.
 
 ## Play
 
@@ -106,6 +118,17 @@ for measured results and [target calibration](docs/targets.md) for reference run
 never writes records. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
 course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
+`-DGRAVELBYTE_SMOKE=ON` builds a separate real-save diagnostic: it toggles sound,
+changes car, starts a race, pauses, toggles sound again and resumes. It prints
+`SAVE_OK` after read-back verification and `SMOKE_DONE` after reaching racing.
+Do not combine the two diagnostic options. Always restore the normal player.
+The board is explicitly `pimoroni_picosystem`: the generic Pico's 2MiB flash
+limit would assert when saving in the PicoSystem's final 16MiB flash sector.
+
+Reusable simulation, camera, recording, landmark and layout values are grouped
+in `src/tuning.hpp`. Authored road bends, car profiles and targets remain data.
+Replays use a fixed 24KiB pose buffer; very long runs progressively reduce the
+sampling frequency instead of exhausting device memory. They are session-only.
 
 [Reference art](assets/reference/car-track-reference.png) and its exact
 [ImageGen prompt](assets/reference/car-track-prompt.md) are retained as design

@@ -6,9 +6,9 @@
     <meta name="theme-color" content="#152521" />
     <meta
       name="description"
-      content="Three cars. Three roads to master. Play Gravelbyte in your browser or take the rally onto PicoSystem."
+      content="Three cars. Rally on PicoSystem and in your browser. Play Gravelbyte in your browser or take the rally onto PicoSystem."
     />
-    <title>Gravelbyte — Small car. Big rally.</title>
+    <title>Gravelbyte</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -18,11 +18,10 @@
     </header>
     <main>
       <section class="intro">
-        <p class="eyebrow">POCKET-SIZED RALLY</p>
-        <h1>Small car.<br /><em>Big rally.</em></h1>
+        <h1>Gravelbyte</h1>
         <p>
-          Find your line through forest gravel, sunlit fields and frozen mountain passes. Five
-          splits. One time to beat.
+          Race through woodland bridges, coastal beaches and snowy mountain tunnels. Beat each
+          track’s target to unlock the next.
         </p>
         <a class="download" href="gravelbyte.uf2" download
           >Download for PicoSystem <span>↓</span></a
@@ -39,7 +38,6 @@
             aria-label="Gravelbyte rally game. Controls are listed below."
           ></canvas>
           <div id="start-overlay">
-            <p>THE ROAD IS WAITING.</p>
             <button id="play" disabled>Loading game…</button>
             <p id="load-status" role="status">Preparing the rally</p>
           </div>
@@ -47,6 +45,7 @@
             <div class="steering">
               <button data-bit="1" aria-label="Steer left">◀</button
               ><button data-bit="2" aria-label="Steer right">▶</button>
+              <button id="records" data-bit="256" hidden>Records</button>
             </div>
             <div class="pedals">
               <button data-bit="16" class="race-control">Drift</button
@@ -72,22 +71,22 @@
         <p id="save-status" role="status" class="save-status">Records stay in this browser.</p>
       </section>
       <section class="courses">
-        <p class="eyebrow">THREE ROADS TO MASTER</p>
+        <p class="eyebrow">TRACKS</p>
         <div class="course-grid">
           <article>
             <span>FOREST / GRAVEL</span>
             <h2>Bracken Ridge</h2>
-            <p>Linked corners, high moorland and a demanding woodland descent.</p>
+            <p>Woodland gravel, a river bridge and a demanding forest descent.</p>
           </article>
           <article>
             <span>SUMMER / DRY GRAVEL</span>
             <h2>Sunmeadow Run</h2>
-            <p>Open fields, fast crests and sweeping bends through golden countryside.</p>
+            <p>Coastal gravel, sandy beaches and sweeping bends beside the water.</p>
           </article>
           <article>
             <span>WINTER / SNOW & ICE</span>
             <h2>Frostpine Pass</h2>
-            <p>Tight mountain turns and blue ice that asks for a lighter right foot.</p>
+            <p>Snowy mountains, blue ice and a tunnel through the ridge.</p>
           </article>
         </div>
       </section>
@@ -109,7 +108,8 @@
         </ol>
         <p class="device-controls">
           PicoSystem controls: D-pad steers and selects · A gas / confirm · B brake / back · X drift
-          · Y pause. Use A to retry or B to change selections after finishing.
+          · Y pause. X toggles sound on the title/pause screen and records after finishing. Use A to
+          retry or B to return to track selection.
         </p>
       </section>
     </main>

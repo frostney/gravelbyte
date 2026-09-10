@@ -1,4 +1,5 @@
 #include "game.hpp"
+#include "test_driver.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -6,10 +7,10 @@ namespace rally {
 float clamp(float x, float a, float b) { return std::max(a, std::min(b, x)); }
 float angle_delta(float a, float b) {
   float d = a - b;
-  while (d > 3.14159265f)
-    d -= 6.2831853f;
-  while (d < -3.14159265f)
-    d += 6.2831853f;
+  while (d > tuning::Pi)
+    d -= tuning::Tau;
+  while (d < -tuning::Pi)
+    d += tuning::Tau;
   return d;
 }
 const std::array<CarSpec, CarCount> Cars{
@@ -68,7 +69,7 @@ void Game::build_track() {
       auto b = layout[bi];
       if (i >= b.from && i < b.to) {
         const float t = float(i - b.from) / float(b.to - b.from);
-        curve = b.curvature * std::sin(t * 3.14159265f);
+        curve = b.curvature * std::sin(t * tuning::Pi);
       }
     }
     heading += curve * Step;
@@ -97,7 +98,7 @@ void Game::build_track() {
          {std::array<int, 2>{85, 121}, std::array<int, 2>{170, 225}, std::array<int, 2>{255, 289}})
       if (i >= stretch[0] && i <= stretch[1])
         road[i].half_width -=
-            .70f * std::sin((i - stretch[0]) * 3.14159265f / (stretch[1] - stretch[0]));
+            .70f * std::sin((i - stretch[0]) * tuning::Pi / (stretch[1] - stretch[0]));
     road[i].bank = clamp(-curve * 2.2f, -.085f, .085f);
     road[i].verge_left = 2.5f + 2.0f * std::sin(s * .019f) + (section(i) == 2 ? 5.f : 0.f);
     road[i].verge_right = 1.f + 2.5f * std::sin(s * .013f + 1.f);
@@ -148,17 +149,127 @@ void Game::restart() {
   jumps = 0;
   velocity = {};
   speed = steer = lateral = route_t = elapsed = impact = stranded = slip = 0;
-  countdown = 3;
+  countdown = tuning::CountdownSeconds;
+  show_records = false;
+  cinematic_time = replay_time = record_clock = replay_duration = 0;
+  replay_count = 0;
+  replay_interval = tuning::ReplayInterval;
+  next_sample = replay_interval;
+  prior_splits = best_splits;
   recoveries = 0;
   recovery_message = 0;
   new_record = false;
-  save_requested = false;
   splits = {};
   split_count = 0;
   split_message = split_delta = 0;
   select_reference();
   previous_best = reference_splits.back();
   mode = Mode::Countdown;
+  record_pose();
+}
+bool Game::bridge(int node) const {
+  return selected_track == 0 && node >= tuning::BridgeStart && node < tuning::BridgeEnd;
+}
+bool Game::tunnel(int node) const {
+  return selected_track == 2 && node >= tuning::TunnelStart && node < tuning::TunnelEnd;
+}
+bool Game::coast(int node) const {
+  return selected_track == 1 && node >= tuning::CoastStart && node <= tuning::CoastEnd;
+}
+bool Game::has_scenery(int node, int sign) const {
+  return !bridge(node) && !bridge(node - 1) && !tunnel(node) && !(coast(node) && sign > 0);
+}
+bool Game::unlocked(int track) const {
+  for (int previous = 0; previous < track; ++previous) {
+    bool beaten = false;
+    for (int car_index = 0; car_index < CarCount; ++car_index) {
+      int pair = previous * CarCount + car_index;
+      float time = records[pair].splits.back();
+      beaten |= time > 0 && time < Targets[pair].back();
+    }
+    if (!beaten)
+      return false;
+  }
+  return true;
+}
+void Game::toggle_audio() {
+  muted = !muted;
+  save_requested = true;
+}
+void Game::record_pose(bool final) {
+  if (replay_count == int(replay.size())) {
+    for (int i = 0; i < replay_count / 2; ++i)
+      replay[i] = replay[i * 2];
+    replay_count /= 2;
+    replay_interval *= 2;
+    next_sample = replay_count * replay_interval;
+    if (!final && record_clock + .0001f < next_sample)
+      return;
+  }
+  Vec offset = car - road[segment].p;
+  auto quantize = [](float value) {
+    return int16_t(std::lround(clamp(value * tuning::PoseScale, -32767, 32767)));
+  };
+  replay[replay_count++] = {uint16_t(segment),
+                            quantize(offset.x),
+                            quantize(offset.y),
+                            quantize(offset.z),
+                            int16_t(angle_delta(yaw, 0) * tuning::AngleScale),
+                            int8_t(clamp(pitch * 100, -127, 127)),
+                            int8_t(clamp(roll * 100, -127, 127))};
+  replay_duration = record_clock;
+  next_sample = replay_count * replay_interval;
+}
+void Game::replay_tick(float dt) {
+  if (replay_count < 2 || replay_duration <= 0)
+    return;
+  replay_time = std::fmod(replay_time + dt, replay_duration);
+  int index = std::min(replay_count - 2, int(replay_time / replay_interval));
+  float start = index * replay_interval;
+  float end = index == replay_count - 2 ? replay_duration : start + replay_interval;
+  float t = clamp((replay_time - start) / std::max(.001f, end - start), 0, 1);
+  const auto &a = replay[index], &b = replay[index + 1];
+  auto position = [&](const ReplayPose &p) {
+    return road[p.node].p +
+           Vec{p.x / tuning::PoseScale, p.y / tuning::PoseScale, p.z / tuning::PoseScale};
+  };
+  Vec pa = position(a), pb = position(b);
+  car = pa + (pb - pa) * t;
+  yaw = a.yaw / tuning::AngleScale +
+        angle_delta(b.yaw / tuning::AngleScale, a.yaw / tuning::AngleScale) * t;
+  pitch = (a.pitch * (1 - t) + b.pitch * t) * .01f;
+  roll = (a.roll * (1 - t) + b.roll * t) * .01f;
+  segment = a.node;
+  camera_yaw = yaw;
+  camera_height = car.y;
+  speed = std::sqrt((pb.x - pa.x) * (pb.x - pa.x) + (pb.z - pa.z) * (pb.z - pa.z)) /
+          std::max(.001f, end - start);
+}
+void Game::demo_tick(float dt) {
+  if (!demo_active || demo_time >= tuning::ShowcaseSeconds) {
+    if (!demo_active) {
+      title_car = selected_car;
+      title_track = selected_track;
+    }
+    int next = demo_active ? (selected_track + 1) % TrackCount : 0;
+    demo_active = true;
+    select(title_car, next);
+    segment = next == 0 ? tuning::BridgeStart - 12 : next == 1 ? 45 : tuning::TunnelStart - 14;
+    car = road[segment].p;
+    yaw = camera_yaw = road[segment].heading;
+    ground_y = camera_height = car.y;
+    speed = 18;
+    velocity = {std::sin(yaw) * speed, 0, std::cos(yaw) * speed};
+    demo_time = 0;
+    mode = Mode::Title;
+  }
+  demo_time += dt;
+  float remaining = std::min(dt, tuning::MaxFrameDelta);
+  while (remaining > .00001f) {
+    float step = std::min(tuning::PhysicsStep, remaining);
+    physics(step, driving_input(*this));
+    remaining -= step;
+  }
 }
 int Game::section(int node) { return node < 73 ? 0 : node < 151 ? 1 : node < 221 ? 2 : 3; }
 const char *Game::section_name(int node) const {
@@ -198,7 +309,14 @@ float Game::terrain_height(int i, float side) const {
         bank = std::min(14.f, verge + (far - verge) * .5f);
   if (distance <= verge)
     return n.p.y + side * n.bank;
+  if (bridge(i) || bridge(i - 1))
+    return n.p.y - tuning::RiverDrop * clamp((distance - verge) / 2.f, 0, 1);
+  if (coast(i) && side > 0)
+    return n.p.y -
+           tuning::BeachDrop * clamp((distance - verge) / std::max(1.f, bank - verge), 0, 1);
   float rise = side < 0 ? n.verge_left : n.verge_right;
+  if (selected_track == 2)
+    rise += 5.f;
   rise *= std::min(1.f, (bank - verge) / 6.f);
   if (distance <= bank)
     return n.p.y + edge * n.bank + (rise - edge * n.bank) * (distance - verge) / (bank - verge);
@@ -252,9 +370,9 @@ void Game::recover() {
   steer = 0;
   lateral = 0;
   stranded = 0;
-  elapsed += 3;
+  elapsed += tuning::physics::RecoveryPenalty;
   ++recoveries;
-  recovery_message = 2.5f;
+  recovery_message = tuning::physics::MessageSeconds;
   impact = .4f;
 }
 void Game::physics(float dt, const Input &in) {
@@ -264,23 +382,29 @@ void Game::physics(float dt, const Input &in) {
   float forward = velocity.x * sn + velocity.z * cs;
   float side = velocity.x * cs - velocity.z * sn;
   float target = float(in.right) - float(in.left);
-  steer += (target - steer) * std::min(1.f, dt * 7.f);
+  steer += (target - steer) * std::min(1.f, dt * tuning::SteeringResponse);
   float accel = in.throttle ? spec().acceleration : 0.f;
   if (in.brake)
-    accel = (forward > 1.f) ? -22.f : -5.f;
+    accel = (forward > 1.f) ? -tuning::physics::BrakeDeceleration
+                            : -tuning::physics::ReverseAcceleration;
   if (in.handbrake && forward > 0)
-    accel -= 5.f;
+    accel -= tuning::physics::HandbrakeDrag;
   const bool off = std::abs(lateral) > road_width();
-  float grip = in.handbrake ? 1.35f : spec().grip / (1.f + std::max(0.f, forward - 18.f) * .03f);
+  float grip =
+      in.handbrake
+          ? tuning::physics::HandbrakeGrip
+          : spec().grip / (1.f + std::max(0.f, forward - tuning::physics::GripFalloffSpeed) *
+                                     tuning::physics::GripFalloff);
   if (in.brake && !in.handbrake)
-    grip *= .9f;
+    grip *= tuning::physics::BrakingGrip;
   if (off)
-    grip = 3.8f;
+    grip = tuning::physics::OffroadGrip;
   grip *= surface_grip(segment);
   float lateral_accel = -side * grip;
   // A finite traction circle: accelerating/braking and cornering share grip.
   // The old exponential lateral damping allowed unlimited cornering force.
-  const float traction = (off ? 5.5f : spec().traction) * surface_grip(segment);
+  const float traction =
+      (off ? tuning::physics::OffroadTraction : spec().traction) * surface_grip(segment);
   const float requested = accel * accel + lateral_accel * lateral_accel;
   if (requested > traction * traction) {
     const float scale = traction / std::sqrt(requested);
@@ -291,18 +415,22 @@ void Game::physics(float dt, const Input &in) {
     accel = 0;
     lateral_accel = 0;
   }
-  accel -= forward * std::abs(forward) * (off ? .095f : .007f) + forward * .08f;
+  accel -= forward * std::abs(forward) *
+               (off ? tuning::physics::OffroadDrag : tuning::physics::RoadDrag) +
+           forward * tuning::physics::RollingDrag;
   if (!airborne)
-    accel -= (road[segment + 1].p.y - road[segment].p.y) / Step * 9.f;
-  forward = clamp(forward + accel * dt, -4.f, spec().max_speed);
+    accel -= (road[segment + 1].p.y - road[segment].p.y) / Step * tuning::physics::SlopeGravity;
+  forward = clamp(forward + accel * dt, tuning::physics::ReverseSpeed, spec().max_speed);
   side += lateral_accel * dt;
-  float turn = steer * spec().steering / (1.f + std::abs(forward) * .035f) * forward / 2.6f;
+  float turn = steer * spec().steering /
+               (1.f + std::abs(forward) * tuning::physics::SteeringFalloff) * forward /
+               tuning::physics::Wheelbase;
   if (in.handbrake)
-    turn *= 1.45f;
+    turn *= tuning::physics::HandbrakeTurn;
   if (airborne)
-    turn *= .15f;
+    turn *= tuning::physics::AirborneTurn;
   yaw += turn * dt;
-  camera_yaw += angle_delta(yaw, camera_yaw) * std::min(1.f, dt * 4.f);
+  camera_yaw += angle_delta(yaw, camera_yaw) * std::min(1.f, dt * tuning::CameraResponse);
   // Keep momentum in world space as the chassis turns: this produces real slip.
   velocity = {sn * forward + cs * side, 0, cs * forward - sn * side};
   car = car + velocity * dt;
@@ -310,22 +438,36 @@ void Game::physics(float dt, const Input &in) {
   slip = std::abs(side);
   const float old_ground = ground_y;
   locate();
+  if (bridge(segment) || tunnel(segment)) {
+    float limit = road_width() + tuning::RailMargin - tuning::CarClearance;
+    if (std::abs(lateral) > limit) {
+      float correction = lateral - clamp(lateral, -limit, limit);
+      car = car - road[segment].right * correction;
+      float outward = velocity.x * road[segment].right.x + velocity.z * road[segment].right.z;
+      if (outward * lateral > 0) {
+        velocity = (velocity - road[segment].right * outward) * .75f;
+        impact = .4f;
+      }
+      locate();
+    }
+  }
   const float ground_velocity = (ground_y - old_ground) / dt;
   // Convex authored crests launch the car only when road support falls away.
   const bool crest = (segment >= 155 && segment <= 157) || (segment >= 245 && segment <= 247);
-  if (!airborne && crest && speed > 16 && vertical_speed > .6f &&
-      vertical_speed - ground_velocity > .35f) {
+  if (!airborne && crest && speed > tuning::physics::JumpSpeed &&
+      vertical_speed > tuning::physics::JumpRise &&
+      vertical_speed - ground_velocity > tuning::physics::JumpSupportDrop) {
     airborne = true;
     ++jumps;
   }
   if (airborne) {
-    vertical_speed -= 16.f * dt;
+    vertical_speed -= tuning::Gravity * dt;
     car.y += vertical_speed * dt;
     if (car.y <= ground_y) {
       car.y = ground_y;
       airborne = false;
       vertical_speed = ground_velocity;
-      impact = std::max(impact, .14f);
+      impact = std::max(impact, tuning::physics::LandingImpact);
     }
   } else {
     car.y = ground_y;
@@ -333,53 +475,69 @@ void Game::physics(float dt, const Input &in) {
   }
   const Vec direction = road[segment + 1].p - road[segment].p;
   const float facing = std::cos(angle_delta(yaw, road[segment].heading));
-  const float desired_pitch = airborne ? clamp(vertical_speed / std::max(speed, 1.f), -.25f, .25f)
-                                       : direction.y / Step * facing;
-  pitch += (desired_pitch - pitch) * std::min(1.f, dt * 9.f);
-  roll += (road[segment].bank * facing - steer * speed * .0008f - roll) * std::min(1.f, dt * 7.f);
+  const float desired_pitch = airborne
+                                  ? clamp(vertical_speed / std::max(speed, 1.f),
+                                          -tuning::physics::PitchLimit, tuning::physics::PitchLimit)
+                                  : direction.y / Step * facing;
+  pitch += (desired_pitch - pitch) * std::min(1.f, dt * tuning::physics::PitchResponse);
+  roll += (road[segment].bank * facing - steer * speed * tuning::physics::RollLean - roll) *
+          std::min(1.f, dt * tuning::SteeringResponse);
   camera_height +=
-      (ground_y + std::min(.4f, car.y - ground_y) - camera_height) * std::min(1.f, dt * 7.f);
+      (ground_y + std::min(tuning::physics::CameraJumpRise, car.y - ground_y) - camera_height) *
+      std::min(1.f, dt * tuning::SteeringResponse);
   // The same deterministic roadside trees are used for rendering and collision.
   if (impact <= 0 && std::abs(lateral) > road_width() + 1) {
     for (int i = std::max(0, segment - 2); i < std::min(NodeCount, segment + 3); ++i) {
       if (i % 3)
         continue;
       for (int sign : {-1, 1}) {
+        if (!has_scenery(i, sign))
+          continue;
         Vec p = scenery(i, sign);
         float dx = car.x - p.x, dz = car.z - p.z;
-        if (dx * dx + dz * dz < 2.0f) {
+        if (dx * dx + dz * dz < tuning::physics::TreeCollisionRadiusSquared) {
           float len = std::sqrt(dx * dx + dz * dz);
           if (len < .01f) {
             dx = 1;
             dz = 0;
             len = 1;
           }
-          car.x = p.x + dx / len * 1.5f;
-          car.z = p.z + dz / len * 1.5f;
-          velocity = velocity * -.12f;
-          impact = .7f;
+          car.x = p.x + dx / len * tuning::physics::TreeClearance;
+          car.z = p.z + dz / len * tuning::physics::TreeClearance;
+          velocity = velocity * tuning::physics::TreeBounce;
+          impact = tuning::physics::TreeImpact;
         }
       }
     }
   }
-  if (std::abs(lateral) > 22 ||
-      (speed < 1.2f && in.throttle && std::abs(lateral) > road_width() + 1))
+  if (std::abs(lateral) > tuning::physics::StrandedDistance ||
+      (speed < tuning::physics::StrandedSpeed && in.throttle &&
+       std::abs(lateral) > road_width() + 1))
     stranded += dt;
   else
     stranded = 0;
-  if (stranded > 2.5f || std::abs(lateral) > 45)
+  if (stranded > tuning::physics::RecoveryDelay ||
+      std::abs(lateral) > tuning::physics::RecoveryDistance)
     recover();
 }
 void Game::tick(float dt, const Input &in) {
   if (!std::isfinite(dt) || dt <= 0)
     return;
+  if (in.mute || (in.auxiliary && (mode == Mode::Title || mode == Mode::Paused)))
+    toggle_audio();
+  cinematic_time += std::min(dt, tuning::MaxFrameDelta);
   menu_rotation += std::min(dt, .1f) * .65f;
   const bool left_edge = in.left && !menu_left, right_edge = in.right && !menu_right;
   menu_left = in.left;
   menu_right = in.right;
   if (mode == Mode::Title) {
-    if (in.action)
+    if (in.action) {
+      if (demo_active)
+        select(title_car, title_track);
+      demo_active = false;
       mode = Mode::CarSelect;
+    } else
+      demo_tick(dt);
     return;
   }
   if (mode == Mode::CarSelect || mode == Mode::TrackSelect) {
@@ -397,7 +555,7 @@ void Game::tick(float dt, const Input &in) {
     else if (in.action) {
       if (selection_mode == Mode::CarSelect)
         mode = Mode::TrackSelect;
-      else {
+      else if (unlocked(selected_track)) {
         restart();
         save_requested = true;
       }
@@ -405,10 +563,16 @@ void Game::tick(float dt, const Input &in) {
     return;
   }
   if (mode == Mode::Finished) {
-    if (in.back)
-      mode = Mode::CarSelect;
-    else if (in.action)
+    if (in.back) {
+      select(selected_car, selected_track);
+      mode = Mode::TrackSelect;
+    } else if (in.action)
       restart();
+    else {
+      if (in.auxiliary)
+        show_records = !show_records;
+      replay_tick(dt);
+    }
     return;
   }
   if (in.pause) {
@@ -438,10 +602,13 @@ void Game::tick(float dt, const Input &in) {
   elapsed += dt;
   split_message = std::max(0.f, split_message - dt);
   // Fixed upper substep makes steering/grip independent of display frame rate.
-  float remaining = std::min(dt, .25f);
+  float remaining = std::min(dt, tuning::MaxFrameDelta);
   while (remaining > .00001f) {
-    float step = std::min(.01f, remaining);
+    float step = std::min(tuning::PhysicsStep, remaining);
     physics(step, in);
+    record_clock += step;
+    if (record_clock + .0001f >= next_sample)
+      record_pose();
     remaining -= step;
   }
   if (split_count < SectorCount && segment + route_t >= SectorEnds[split_count] &&
@@ -449,10 +616,14 @@ void Game::tick(float dt, const Input &in) {
     splits[split_count] = elapsed;
     split_delta = elapsed - reference_splits[split_count];
     ++split_count;
-    split_message = 2.5f;
+    split_message = tuning::physics::MessageSeconds;
   }
   if (split_count == SectorCount) {
+    if (record_clock > replay_duration + .0001f)
+      record_pose(true);
     mode = Mode::Finished;
+    cinematic_time = replay_time = 0;
+    show_records = false;
     new_record = (best <= 0 || elapsed < best);
     if (new_record) {
       best = elapsed;
@@ -465,26 +636,29 @@ void Game::tick(float dt, const Input &in) {
 
 float Game::progress() const { return clamp((segment + route_t - 1.f) / (NodeCount - 5.f), 0, 1); }
 static uint32_t checksum(const SaveRecord &r) {
-  uint32_t hash = 2166136261u;
+  uint32_t hash = tuning::FnvOffset;
   for (uint32_t word : {r.magic, r.version, r.milliseconds, r.course, r.splits[0], r.splits[1],
                         r.splits[2], r.splits[3]}) {
     for (int i = 0; i < 4; ++i) {
-      hash = (hash ^ uint8_t(word)) * 16777619u;
+      hash = (hash ^ uint8_t(word)) * tuning::FnvPrime;
       word >>= 8;
     }
   }
   return hash;
 }
 SaveRecord encode_best(float seconds, const std::array<float, SectorCount> &splits) {
-  SaveRecord r{0x52414c59, 2, uint32_t(clamp(seconds * 1000.f, 0, 86400000.f) + .5f), 0};
+  SaveRecord r{0x52414c59, 2,
+               uint32_t(clamp(seconds * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) + .5f),
+               0};
   for (int i = 0; i < SectorCount - 1; ++i)
-    r.splits[i] = uint32_t(clamp(splits[i] * 1000.f, 0, 86400000.f) + .5f);
+    r.splits[i] =
+        uint32_t(clamp(splits[i] * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) + .5f);
   r.checksum = checksum(r);
   return r;
 }
 float decode_best(const SaveRecord &r) {
   if (r.magic != 0x52414c59 || r.version != 2 || r.course != CourseVersion ||
-      r.milliseconds < 1000 || r.milliseconds > 86400000 || r.checksum != checksum(r) ||
+      r.milliseconds < 1000 || r.milliseconds > tuning::MaxRecordMs || r.checksum != checksum(r) ||
       r.splits[0] == 0 || r.splits.back() >= r.milliseconds)
     return 0;
   for (int i = 1; i < SectorCount - 1; ++i)
@@ -504,10 +678,10 @@ void load_best(Game &game, const SaveRecord &record) {
   game.select_reference();
 }
 static uint32_t save_checksum(const SaveData &save) {
-  uint32_t hash = 2166136261u;
+  uint32_t hash = tuning::FnvOffset;
   auto word = [&](uint32_t v) {
     for (int i = 0; i < 4; ++i) {
-      hash = (hash ^ uint8_t(v)) * 16777619u;
+      hash = (hash ^ uint8_t(v)) * tuning::FnvPrime;
       v >>= 8;
     }
   };
@@ -522,19 +696,25 @@ static uint32_t save_checksum(const SaveData &save) {
 }
 SaveData encode_save(const Game &game) {
   SaveData save;
-  save.magic = 0x4752564c;
-  save.version = 1;
-  save.car = game.selected_car;
-  save.track = game.selected_track;
+  save.magic = tuning::SaveMagic;
+  save.version = tuning::SaveVersion;
+  save.car = (game.demo_active ? game.title_car : game.selected_car) |
+             (game.muted ? tuning::MutedFlag : 0);
+  save.track = game.demo_active ? game.title_track : game.selected_track;
   for (int i = 0; i < CarCount * TrackCount; ++i)
     for (int j = 0; j < SectorCount; ++j)
-      save.times[i][j] = uint32_t(clamp(game.records[i].splits[j] * 1000.f, 0, 86400000.f) + .5f);
+      save.times[i][j] = uint32_t(
+          clamp(game.records[i].splits[j] * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) +
+          .5f);
   save.checksum = save_checksum(save);
   return save;
 }
 bool load_save(Game &game, const SaveData &save) {
-  if (save.magic != 0x4752564c || save.version != 1 || save.car >= CarCount ||
-      save.track >= TrackCount || save.checksum != save_checksum(save))
+  const unsigned car = save.car & tuning::SelectionMask;
+  if (save.magic != tuning::SaveMagic ||
+      (save.version != 1 && save.version != tuning::SaveVersion) ||
+      (save.car & ~(tuning::SelectionMask | (save.version == 2 ? tuning::MutedFlag : 0u))) ||
+      car >= CarCount || save.track >= TrackCount || save.checksum != save_checksum(save))
     return false;
   for (auto &times : save.times) {
     if (times.back() == 0) {
@@ -542,7 +722,7 @@ bool load_save(Game &game, const SaveData &save) {
         if (t)
           return false;
     } else {
-      if (times.front() == 0 || times.back() > 86400000)
+      if (times.front() == 0 || times.back() > tuning::MaxRecordMs)
         return false;
       for (int i = 1; i < SectorCount; ++i)
         if (times[i] <= times[i - 1])
@@ -552,7 +732,8 @@ bool load_save(Game &game, const SaveData &save) {
   for (int i = 0; i < CarCount * TrackCount; ++i)
     for (int j = 0; j < SectorCount; ++j)
       game.records[i].splits[j] = save.times[i][j] * .001f;
-  game.select(int(save.car), int(save.track));
+  game.muted = save.version == tuning::SaveVersion && (save.car & tuning::MutedFlag);
+  game.select(int(car), int(save.track));
   game.mode = Mode::Title;
   return true;
 }

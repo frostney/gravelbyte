@@ -27,6 +27,7 @@ EMSCRIPTEN_KEEPALIVE void gb_step(float dt, unsigned buttons, int controls) {
   in.action = edges & 32;
   in.pause = edges & 64;
   in.back = edges & 128;
+  in.auxiliary = edges & (16 | 256);
   game.tick(dt, in);
 }
 EMSCRIPTEN_KEEPALIVE void gb_blur() {
@@ -40,6 +41,8 @@ EMSCRIPTEN_KEEPALIVE int gb_car() { return game.selected_car; }
 EMSCRIPTEN_KEEPALIVE int gb_track() { return game.selected_track; }
 EMSCRIPTEN_KEEPALIVE int gb_mode() { return int(game.mode); }
 EMSCRIPTEN_KEEPALIVE float gb_speed() { return game.speed; }
+EMSCRIPTEN_KEEPALIVE int gb_muted() { return game.muted; }
+EMSCRIPTEN_KEEPALIVE void gb_toggle_audio() { game.toggle_audio(); }
 EMSCRIPTEN_KEEPALIVE int gb_dirty() { return game.save_requested; }
 EMSCRIPTEN_KEEPALIVE void gb_saved() { game.save_requested = false; }
 EMSCRIPTEN_KEEPALIVE int gb_save_size() { return sizeof(transfer); }

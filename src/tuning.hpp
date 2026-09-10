@@ -1,0 +1,49 @@
+#pragma once
+#include <cstddef>
+namespace rally::tuning {
+constexpr float Pi = 3.14159265f, Tau = 6.2831853f;
+constexpr float PhysicsStep = .01f, MaxFrameDelta = .25f, CountdownSeconds = 3.f;
+constexpr float SteeringResponse = 7.f, CameraResponse = 4.f, Gravity = 16.f;
+constexpr float Milliseconds = 1000.f, SecondsPerMicrosecond = .000001f;
+constexpr int WorldScale = 64, BasisScale = 16384, BasisShift = 14;
+constexpr int NearPlane = 42, FarPlane = 170 * WorldScale, FocalLength = 85;
+constexpr int CenterX = 60, CenterY = 53, DepthNumerator = 2097152;
+constexpr int VertexCacheSize = 512, FaceCapacity = 1800, ShadowCapacity = 64, RidgeSamples = 512;
+constexpr int RoadBehind = 5, RoadAhead = 24;
+constexpr float ChaseDistance = 7.5f, ChaseHeight = 3.6f, ShowroomDistance = 5.f;
+constexpr float ShotSeconds = 5.f, ShowcaseSeconds = 15.f;
+constexpr std::size_t ReplayCapacity = 2048;
+constexpr float ReplayInterval = .1f, PoseScale = 64.f, AngleScale = 32767.f / Pi;
+constexpr int BridgeStart = 42, BridgeEnd = 52, TunnelStart = 115, TunnelEnd = 131;
+constexpr int CoastStart = 30, CoastEnd = 150;
+constexpr float RailMargin = .8f, CarClearance = .95f, TunnelHeight = 6.5f;
+constexpr float RiverDrop = 7.f, BeachDrop = 2.f;
+constexpr int ChasePitchSine = 3213, ChasePitchCosine = 16066;
+constexpr float SceneryDetailDistance = 72.f;
+constexpr int StatsTop = 84, StatsRow = 8, StatBars = 5;
+constexpr unsigned SaveMagic = 0x4752564c, SaveVersion = 2, MutedFlag = 0x100;
+constexpr unsigned SelectionMask = 0xff, FnvOffset = 2166136261u, FnvPrime = 16777619u;
+constexpr unsigned MaxRecordMs = 86400000;
+} // namespace rally::tuning
+
+namespace rally::tuning::physics {
+constexpr float BrakeDeceleration = 22.f, ReverseAcceleration = 5.f, HandbrakeDrag = 5.f;
+constexpr float HandbrakeGrip = 1.35f, GripFalloffSpeed = 18.f, GripFalloff = .03f;
+constexpr float BrakingGrip = .9f, OffroadGrip = 3.8f, OffroadTraction = 5.5f;
+constexpr float RoadDrag = .007f, OffroadDrag = .095f, RollingDrag = .08f, SlopeGravity = 9.f;
+constexpr float ReverseSpeed = -4.f, SteeringFalloff = .035f, Wheelbase = 2.6f;
+constexpr float HandbrakeTurn = 1.45f, AirborneTurn = .15f;
+constexpr float JumpSpeed = 16.f, JumpRise = .6f, JumpSupportDrop = .35f, LandingImpact = .14f;
+constexpr float PitchLimit = .25f, PitchResponse = 9.f, RollLean = .0008f;
+constexpr float CameraJumpRise = .4f, TreeCollisionRadiusSquared = 2.f, TreeClearance = 1.5f;
+constexpr float TreeBounce = -.12f, TreeImpact = .7f, StrandedDistance = 22.f;
+constexpr float StrandedSpeed = 1.2f, RecoveryDelay = 2.5f, RecoveryDistance = 45.f;
+constexpr float RecoveryPenalty = 3.f, MessageSeconds = 2.5f;
+} // namespace rally::tuning::physics
+namespace rally::tuning::audio {
+constexpr unsigned UpdateUs = 50000, SampleRate = 22050;
+constexpr float BaseFrequency = 65.f, SpeedFrequency = 8.f;
+} // namespace rally::tuning::audio
+namespace rally::tuning::telemetry {
+constexpr unsigned MinFpsFrameUs = 33334, ReportUs = 2000000;
+}

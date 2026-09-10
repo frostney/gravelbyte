@@ -36,9 +36,9 @@ function useInput(input) {
   $('touch').hidden = input !== 'touch' || !playing;
   const hints = {
     keyboard:
-      '← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause',
+      '← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause · M sound · Space records after finishing',
     gamepad:
-      'D-pad / left stick steer · RT / A gas · LT / B brake · X drift · A confirm · B back · Start pause',
+      'D-pad / left stick steer · RT / A gas · LT / B brake · X drift · A confirm · B back · Start pause · X sound in title/pause or records after finishing',
     touch:
       'Hold arrows to steer. Hold Gas, Brake or Drift to drive. Tap Go to confirm, Back to choose again, and Pause to stop.',
   };
@@ -139,7 +139,10 @@ $('pause').addEventListener('click', () => {
   pulses |= 64;
 });
 $('mute').addEventListener('click', () => {
-  muted = !muted;
+  if (!engine) return;
+  engine._gb_toggle_audio();
+  muted = !!engine._gb_muted();
+  save();
   $('mute').textContent = muted ? 'Unmute' : 'Mute';
   $('mute').setAttribute('aria-pressed', String(muted));
   if (playing) {
@@ -223,6 +226,9 @@ function tick(time) {
       pulses = 0;
     }
     const mode = engine._gb_mode();
+    muted = !!engine._gb_muted();
+    $('mute').textContent = muted ? 'Unmute' : 'Mute';
+    $('mute').setAttribute('aria-pressed', String(muted));
     canvas.dataset.mode = String(mode);
     canvas.dataset.car = String(engine._gb_car());
     canvas.dataset.track = String(engine._gb_track());
@@ -234,10 +240,15 @@ function tick(time) {
       pauseTouch.hidden = !race && mode !== 5;
       pauseTouch.textContent = mode === 5 ? 'Resume' : 'Pause';
       document.querySelectorAll('.menu-control').forEach((b) => (b.hidden = race));
+      $('records').hidden = mode !== 6;
       $('pause').textContent = mode === 5 ? 'Resume' : 'Pause';
     }
     if (gain) {
-      gain.gain.setTargetAtTime(!muted && mode === 4 ? 0.035 : 0, audioContext.currentTime, 0.03);
+      gain.gain.setTargetAtTime(
+        !muted && (mode === 0 || mode === 4 || mode === 6) ? 0.035 : 0,
+        audioContext.currentTime,
+        0.03,
+      );
       oscillator.frequency.setTargetAtTime(
         65 + engine._gb_speed() * 8,
         audioContext.currentTime,
@@ -272,7 +283,10 @@ try {
   render();
   $('play').disabled = false;
   $('play').textContent = 'Play Gravelbyte';
-  $('load-status').textContent = 'Three cars. Three roads. All yours.';
+  $('load-status').textContent = 'Ready to play.';
+  muted = !!engine._gb_muted();
+  $('mute').textContent = muted ? 'Unmute' : 'Mute';
+  $('mute').setAttribute('aria-pressed', String(muted));
   requestAnimationFrame(tick);
 } catch (error) {
   $('load-status').textContent =

@@ -1,4 +1,36 @@
-# Gravelbyte handoff
+# Active: cinematics, progression and track landmarks
+
+Branch: feat/cinematics-and-landmarks, based on origin/main 4ee4205.
+User confirmed all grilling decisions, including retaining existing selector,
+locked browsing/global unlocks, actual-run replay hidden records, persistent
+sound, larger cars/arrows, no taglines, forest bridge/summer beach/winter tunnel.
+See docs/cinematics-and-landmarks.md for the approved brief and architecture.
+
+Implementation complete locally; delivery and full device measurement pending.
+Confirmed race-entry bug: generic Pico 2MiB flash configuration asserted on save
+at the PicoSystem's 16MiB final sector. Board fixed and compile-time protected.
+Hardware real-save smoke passed: five verified writes, countdown and racing,
+pause/audio/resume. output/hardware-menu-smoke.log. Original firmware reported
+pico board; actual device has 16MiB flash, ID E46024C7430C442A.
+
+New verified full backup: output/backups/before-cinematics.uf2
+SHA256 371e159d418e3336d22cb6e2acce2222cb088baf2f83ae9779ba27e8a8e8e8d5.
+Running diagnostic capture: output/hardware-cinematics-benchmark.log (all nine).
+Final benchmark candidate: output/firmware/cinematics-benchmark.uf2
+SHA256 483c04768cab36d7b6dfdd7bc9593ab50613880feb92bfc652033b941be26cb3.
+Constants cleanup rebuilt byte-identically. Earlier baseline/lod26 logs had missed
+frames and must not be counted as final acceptance. Current 24-node view candidate
+has passed Mica/Bracken so far; remaining runs in progress. Check current log.
+
+Next: finish all nine, address any frame misses, validate cinematic playback on
+device, restore verified NORMAL player firmware, complete CI/PR/publication and
+update validation evidence. NEVER end with the automated diagnostic installed.
+Native six tests and browser three tests pass; sanitizer rerun is in progress.
+Browser local QA uses localhost8173. Save format remains 200 bytes with v1 migration.
+Pico BSS including replay ~232KiB; 50fps remains unmet.
+
+---
+
 
 ## Delivered
 
