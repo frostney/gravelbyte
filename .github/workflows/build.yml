@@ -22,7 +22,7 @@ jobs:
       - name: Build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libsdl2-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          sudo apt-get install -y cmake ninja-build libsdl2-dev
           python3 -m pip install clang-format==23.1.0
       - name: Format and native contracts
         run: |
@@ -43,6 +43,13 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npm run test:web
+      - name: Arm GNU 15.3.Rel1
+        run: |
+          curl --fail --silent --show-error --location 'https://gitlab.arm.com/api/v4/projects/tooling%2Fgnu-toolchains-for-arm/packages/generic/gnu-toolchain/15.3.rel1/arm-gnu-toolchain-15.3.rel1-x86_64-arm-none-eabi.tar.xz' -o "$RUNNER_TEMP/arm.tar.xz"
+          printf '563bebb2b97d53382b956d6ee1fe61e2cae26699901417234a37df505ef9b5fa  %s\n' "$RUNNER_TEMP/arm.tar.xz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/arm"
+          tar -xf "$RUNNER_TEMP/arm.tar.xz" -C "$RUNNER_TEMP/arm" --strip-components=1
+          "$RUNNER_TEMP/arm/bin/arm-none-eabi-gcc" --version
       - name: Pinned Pico SDKs
         run: |
           git init "$RUNNER_TEMP/pico-sdk"
@@ -56,7 +63,7 @@ jobs:
           git -C "$RUNNER_TEMP/picosystem" checkout FETCH_HEAD
       - name: PicoSystem and matching download
         run: |
-          export PICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" PICOSYSTEM_DIR="$RUNNER_TEMP/picosystem"
+          export PICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" PICOSYSTEM_DIR="$RUNNER_TEMP/picosystem" PICO_TOOLCHAIN_PATH="$RUNNER_TEMP/arm"
           cmake -S . -B build-pico -G Ninja -DGRAVELBYTE_DEVICE=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build-pico
           cp build-pico/gravelbyte.uf2 build-web/site/

@@ -79,6 +79,7 @@ cmake -S . -B build-pico -DGRAVELBYTE_DEVICE=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-pico -j
 ```
 
+CI pins Arm GNU 15.3.Rel1 (GCC 15.3.1), matching the device measurements.
 Pinned SDK revisions and build steps live in `.github/workflows/build.yml`.
 Run CMake again after editing static site files to copy them into the web build.
 Native macOS output is `build/gravelbyte.app`; Linux output is `build/gravelbyte`.
