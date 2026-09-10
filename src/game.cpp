@@ -3,20 +3,22 @@
 #include <algorithm>
 #include <cmath>
 
-namespace rally {
-float clamp(float x, float a, float b) { return std::max(a, std::min(b, x)); }
-float angle_delta(float a, float b) {
-  float d = a - b;
-  while (d > tuning::Pi)
-    d -= tuning::Tau;
-  while (d < -tuning::Pi)
-    d += tuning::Tau;
-  return d;
+namespace Rally {
+float Clamp(float Value, float Minimum, float Maximum) {
+  return std::max(Minimum, std::min(Maximum, Value));
 }
-const std::array<CarSpec, CarCount> Cars{
-    {{"MICA", "EASY", 7.0f, 28.f, 5.4f, 10.f, .30f, .92f, 1.07f, .84f, 2, 2, 1},
-     {"TORR", "STANDARD", 10.4f, 34.f, 4.2f, 8.5f, .29f, 1.f, 1.f, 1.f, 3, 3, 3},
-     {"KITE", "EXPERT", 13.5f, 40.f, 3.5f, 9.2f, .32f, 1.06f, .80f, 1.13f, 5, 5, 5}}};
+float AngleDelta(float TargetAngle, float CurrentAngle) {
+  float Difference = TargetAngle - CurrentAngle;
+  while (Difference > Tuning::HalfTurnRadians)
+    Difference -= Tuning::FullTurnRadians;
+  while (Difference < -Tuning::HalfTurnRadians)
+    Difference += Tuning::FullTurnRadians;
+  return Difference;
+}
+const std::array<CarSpecification, CarCount> Cars{
+    {{"FINCH 1300", "EASY", 7.0f, 28.f, 5.4f, 10.f, .30f, .92f, 1.07f, .84f, 2, 2, 1},
+     {"KESTREL GT", "STANDARD", 10.4f, 34.f, 4.2f, 8.5f, .29f, 1.f, 1.f, 1.f, 3, 3, 3},
+     {"GOSHAWK TURBO", "EXPERT", 13.5f, 40.f, 3.5f, 9.2f, .32f, 1.06f, .80f, 1.13f, 5, 5, 5}}};
 const std::array<const char *, TrackCount> TrackNames{"BRACKEN RIDGE", "SUNMEADOW RUN",
                                                       "FROSTPINE PASS"};
 // Calibrated from completed deterministic public-input drives; see docs/targets.md.
@@ -31,809 +33,898 @@ static constexpr std::array<std::array<float, SectorCount>, 9> Targets{
      {22.64f, 47.81f, 70.48f, 95.70f, 115.59f},
      {21.75f, 46.07f, 67.89f, 92.25f, 111.39f}}};
 Game::Game() {
-  build_track();
-  restart();
-  mode = Mode::Title;
+  BuildTrack();
+  Restart();
+  CurrentMode = GameMode::Title;
 }
-void Game::build_track() {
-  road = {};
+void Game::BuildTrack() {
+  Road = {};
 
   // Authored corner sequence: flowing opening, ridge, hairpin, forest descent.
   struct Bend {
-    int from, to;
-    float curvature;
+    int From, To;
+    float Curvature;
   };
-  constexpr Bend bends[] = {{10, 24, .020f},    {27, 40, -.034f},   {44, 56, .045f},
+  constexpr Bend Bends[] = {{10, 24, .020f},    {27, 40, -.034f},   {44, 56, .045f},
                             {59, 70, -.032f},   {73, 87, .040f},    {92, 104, -.052f},
                             {108, 120, .032f},  {126, 141, .045f},  {143, 151, -.018f},
                             {161, 173, -.044f}, {175, 187, .050f},  {191, 205, -.066f},
                             {211, 223, .056f},  {226, 237, -.038f}, {250, 261, .047f},
                             {264, 277, -.038f}, {281, 293, .034f}};
-  constexpr Bend summer[] = {{12, 35, -.022f},   {42, 65, .028f},    {72, 93, -.030f},
+  constexpr Bend Summer[] = {{12, 35, -.022f},   {42, 65, .028f},    {72, 93, -.030f},
                              {102, 124, .034f},  {131, 146, -.029f}, {162, 183, .032f},
                              {190, 209, -.043f}, {215, 236, .033f},  {253, 271, -.028f},
                              {279, 294, .036f}};
-  constexpr Bend winter[] = {{10, 25, -.030f},   {30, 45, .042f},    {50, 67, -.040f},
+  constexpr Bend Winter[] = {{10, 25, -.030f},   {30, 45, .042f},    {50, 67, -.040f},
                              {74, 89, .046f},    {94, 109, -.048f},  {115, 131, .039f},
                              {136, 150, -.041f}, {164, 180, .046f},  {185, 201, -.050f},
                              {209, 225, .046f},  {230, 240, -.032f}, {255, 271, .044f},
                              {278, 293, -.040f}};
-  const Bend *layout = selected_track == 0 ? bends : selected_track == 1 ? summer : winter;
-  const int bend_count = selected_track == 0   ? int(std::size(bends))
-                         : selected_track == 1 ? int(std::size(summer))
-                                               : int(std::size(winter));
-  float heading = 0;
-  for (int i = 0; i < NodeCount; ++i) {
-    float curve = 0;
-    for (int bi = 0; bi < bend_count; ++bi) {
-      auto b = layout[bi];
-      if (i >= b.from && i < b.to) {
-        const float t = float(i - b.from) / float(b.to - b.from);
-        curve = b.curvature * std::sin(t * tuning::Pi);
+  const Bend *Layout = SelectedTrack == 0 ? Bends : SelectedTrack == 1 ? Summer : Winter;
+  const int BendCount = SelectedTrack == 0   ? int(std::size(Bends))
+                        : SelectedTrack == 1 ? int(std::size(Summer))
+                                             : int(std::size(Winter));
+  float Heading = 0;
+  for (int Index = 0; Index < NodeCount; ++Index) {
+    float Curve = 0;
+    for (int BendIndex = 0; BendIndex < BendCount; ++BendIndex) {
+      auto CurrentBend = Layout[BendIndex];
+      if (Index >= CurrentBend.From && Index < CurrentBend.To) {
+        const float Fraction =
+            float(Index - CurrentBend.From) / float(CurrentBend.To - CurrentBend.From);
+        Curve = CurrentBend.Curvature * std::sin(Fraction * Tuning::HalfTurnRadians);
       }
     }
-    heading += curve * Step;
-    road[i].heading = heading;
-    road[i].right = {std::cos(heading), 0, -std::sin(heading)};
-    road[i].turn = curve;
-    if (i)
-      road[i].p = road[i - 1].p + Vec{std::sin(heading) * Step, 0, std::cos(heading) * Step};
-    const float s = i * Step;
-    road[i].p.y = 3.5f * std::sin(s * .008f) + 1.6f * std::sin(s * .021f) +
-                  26.0f * std::exp(-std::pow((s - 850.f) / 230.f, 2.f)) +
-                  2.8f * std::exp(-std::pow((s - 930.f) / 12.f, 2.f)) +
-                  2.8f * std::exp(-std::pow((s - 1470.f) / 12.f, 2.f));
-    if (selected_track == 1)
-      road[i].p.y = 2.8f * std::sin(s * .009f) +
-                    10.f * std::exp(-std::pow((s - 650.f) / 190.f, 2.f)) +
-                    2.8f * std::exp(-std::pow((s - 930.f) / 12.f, 2.f)) +
-                    2.8f * std::exp(-std::pow((s - 1470.f) / 12.f, 2.f));
-    if (selected_track == 2)
-      road[i].p.y = 4.f * std::sin(s * .006f) +
-                    35.f * std::exp(-std::pow((s - 1050.f) / 300.f, 2.f)) +
-                    2.8f * std::exp(-std::pow((s - 930.f) / 12.f, 2.f)) +
-                    2.8f * std::exp(-std::pow((s - 1470.f) / 12.f, 2.f));
-    road[i].half_width = selected_track == 1 ? 3.9f : 3.65f;
-    for (auto stretch :
+    Heading += Curve * TrackSegmentLength;
+    Road[Index].Heading = Heading;
+    Road[Index].Right = {std::cos(Heading), 0, -std::sin(Heading)};
+    Road[Index].Turn = Curve;
+    if (Index)
+      Road[Index].Position =
+          Road[Index - 1].Position + Vector3{std::sin(Heading) * TrackSegmentLength, 0,
+                                             std::cos(Heading) * TrackSegmentLength};
+    const float DistanceAlongTrack = Index * TrackSegmentLength;
+    Road[Index].Position.CoordinateY =
+        3.5f * std::sin(DistanceAlongTrack * .008f) + 1.6f * std::sin(DistanceAlongTrack * .021f) +
+        26.0f * std::exp(-std::pow((DistanceAlongTrack - 850.f) / 230.f, 2.f)) +
+        2.8f * std::exp(-std::pow((DistanceAlongTrack - 930.f) / 12.f, 2.f)) +
+        2.8f * std::exp(-std::pow((DistanceAlongTrack - 1470.f) / 12.f, 2.f));
+    if (SelectedTrack == 1)
+      Road[Index].Position.CoordinateY =
+          2.8f * std::sin(DistanceAlongTrack * .009f) +
+          10.f * std::exp(-std::pow((DistanceAlongTrack - 650.f) / 190.f, 2.f)) +
+          2.8f * std::exp(-std::pow((DistanceAlongTrack - 930.f) / 12.f, 2.f)) +
+          2.8f * std::exp(-std::pow((DistanceAlongTrack - 1470.f) / 12.f, 2.f));
+    if (SelectedTrack == 2)
+      Road[Index].Position.CoordinateY =
+          4.f * std::sin(DistanceAlongTrack * .006f) +
+          35.f * std::exp(-std::pow((DistanceAlongTrack - 1050.f) / 300.f, 2.f)) +
+          2.8f * std::exp(-std::pow((DistanceAlongTrack - 930.f) / 12.f, 2.f)) +
+          2.8f * std::exp(-std::pow((DistanceAlongTrack - 1470.f) / 12.f, 2.f));
+    Road[Index].HalfWidth = SelectedTrack == 1 ? 3.9f : 3.65f;
+    for (auto Stretch :
          {std::array<int, 2>{85, 121}, std::array<int, 2>{170, 225}, std::array<int, 2>{255, 289}})
-      if (i >= stretch[0] && i <= stretch[1])
-        road[i].half_width -=
-            .70f * std::sin((i - stretch[0]) * tuning::Pi / (stretch[1] - stretch[0]));
-    road[i].bank = clamp(-curve * 2.2f, -.085f, .085f);
-    road[i].verge_left = 2.5f + 2.0f * std::sin(s * .019f) + (section(i) == 2 ? 5.f : 0.f);
-    road[i].verge_right = 1.f + 2.5f * std::sin(s * .013f + 1.f);
+      if (Index >= Stretch[0] && Index <= Stretch[1])
+        Road[Index].HalfWidth -= .70f * std::sin((Index - Stretch[0]) * Tuning::HalfTurnRadians /
+                                                 (Stretch[1] - Stretch[0]));
+    Road[Index].Bank = Clamp(-Curve * 2.2f, -.085f, .085f);
+    Road[Index].VergeLeft = 2.5f + 2.0f * std::sin(DistanceAlongTrack * .019f) +
+                            (GetSectionIndex(Index) == 2 ? 5.f : 0.f);
+    Road[Index].VergeRight = 1.f + 2.5f * std::sin(DistanceAlongTrack * .013f + 1.f);
   }
   // Limit each hillside to its own corridor. Long offset strips otherwise
   // fold across hairpins and can put a distant mountain through the near road.
   // The bounds lie inside the nearest-road Voronoi bisectors with a margin.
-  for (int i = 0; i < NodeCount; ++i)
-    for (int sign : {-1, 1}) {
-      float limit = 100;
-      for (int j = 0; j < NodeCount; ++j) {
-        if (std::abs(j - i) <= 3)
+  for (int Index = 0; Index < NodeCount; ++Index)
+    for (int Sign : {-1, 1}) {
+      float Limit = 100;
+      for (int OtherIndex = 0; OtherIndex < NodeCount; ++OtherIndex) {
+        if (std::abs(OtherIndex - Index) <= 3)
           continue;
-        Vec d = road[j].p - road[i].p;
-        float toward = sign * (d.x * road[i].right.x + d.z * road[i].right.z);
-        if (toward > .01f)
-          limit = std::min(limit, .38f * (d.x * d.x + d.z * d.z) / toward);
+        Vector3 FourthVertex = Road[OtherIndex].Position - Road[Index].Position;
+        float Toward = Sign * (FourthVertex.CoordinateX * Road[Index].Right.CoordinateX +
+                               FourthVertex.CoordinateZ * Road[Index].Right.CoordinateZ);
+        if (Toward > .01f)
+          Limit = std::min(Limit, .38f *
+                                      (FourthVertex.CoordinateX * FourthVertex.CoordinateX +
+                                       FourthVertex.CoordinateZ * FourthVertex.CoordinateZ) /
+                                      Toward);
       }
-      (sign < 0 ? road[i].far_left : road[i].far_right) = std::max(road[i].half_width + 3.f, limit);
+      (Sign < 0 ? Road[Index].FarLeft : Road[Index].FarRight) =
+          std::max(Road[Index].HalfWidth + 3.f, Limit);
     }
-  for (int i = 0; i < NodeCount; ++i) {
-    float width = road[i].half_width, verge = width + .9f;
-    float left = road[i].far_left, right = road[i].far_right;
-    const float sides[] = {-left,
-                           -std::min(14.f, verge + (left - verge) * .5f),
-                           -verge,
-                           -width,
-                           -width * .49f,
-                           width * .49f,
-                           width,
-                           verge,
-                           std::min(14.f, verge + (right - verge) * .5f),
-                           right};
-    for (int side = 0; side < 10; ++side)
-      terrain[i][side] = roadside(i, sides[side]);
+  for (int Index = 0; Index < NodeCount; ++Index) {
+    float Width = Road[Index].HalfWidth, Verge = Width + .9f;
+    float Left = Road[Index].FarLeft, Right = Road[Index].FarRight;
+    const float Sides[] = {-Left,
+                           -std::min(14.f, Verge + (Left - Verge) * .5f),
+                           -Verge,
+                           -Width,
+                           -Width * .49f,
+                           Width * .49f,
+                           Width,
+                           Verge,
+                           std::min(14.f, Verge + (Right - Verge) * .5f),
+                           Right};
+    for (int Side = 0; Side < 10; ++Side)
+      Terrain[Index][Side] = Roadside(Index, Sides[Side]);
   }
   // A coarse outer massif is static; keep its terrain sampling out of rendering.
-  if (selected_track == 2)
-    for (int k = 0; k <= tuning::MountainSections; ++k) {
-      float t = float(k) / tuning::MountainSections;
-      int node = tuning::TunnelStart +
-                 k * (tuning::TunnelEnd - tuning::TunnelStart) / tuning::MountainSections;
-      auto &ring = mountain[k];
-      ring[2] = road[node].p + Vec{0, tuning::MountainPeak - 12.f * std::abs(t * 2.f - 1.f), 0};
-      ring[0] = roadside(node, -std::min(tuning::MountainWidth, road[node].far_left));
-      ring[4] = roadside(node, std::min(tuning::MountainWidth, road[node].far_right));
-      ring[1] = ring[0] + (ring[2] - ring[0]) * .45f;
-      ring[3] = ring[4] + (ring[2] - ring[4]) * .45f;
+  if (SelectedTrack == 2)
+    for (int SampleIndex = 0; SampleIndex <= Tuning::MountainSections; ++SampleIndex) {
+      float Fraction = float(SampleIndex) / Tuning::MountainSections;
+      int NodeIndex = Tuning::TunnelStart + SampleIndex *
+                                                (Tuning::TunnelEnd - Tuning::TunnelStart) /
+                                                Tuning::MountainSections;
+      auto &Ring = Mountain[SampleIndex];
+      Ring[2] = Road[NodeIndex].Position +
+                Vector3{0, Tuning::MountainPeak - 12.f * std::abs(Fraction * 2.f - 1.f), 0};
+      Ring[0] = Roadside(NodeIndex, -std::min(Tuning::MountainWidth, Road[NodeIndex].FarLeft));
+      Ring[4] = Roadside(NodeIndex, std::min(Tuning::MountainWidth, Road[NodeIndex].FarRight));
+      Ring[1] = Ring[0] + (Ring[2] - Ring[0]) * .45f;
+      Ring[3] = Ring[4] + (Ring[2] - Ring[4]) * .45f;
     }
 }
-void Game::restart() {
-  segment = 1;
-  furthest = 1;
-  car = road[1].p;
-  yaw = road[1].heading;
-  camera_yaw = yaw;
-  ground_y = car.y;
-  camera_height = car.y;
-  vertical_speed = pitch = roll = 0;
-  airborne = false;
-  surface_available = true;
-  jumps = 0;
-  velocity = {};
-  speed = steer = lateral = route_t = elapsed = impact = stranded = slip = 0;
-  countdown = tuning::CountdownSeconds;
-  show_records = false;
-  cinematic_time = replay_time = record_clock = replay_duration = 0;
-  replay_count = 0;
-  replay_interval = tuning::ReplayInterval;
-  next_sample = replay_interval;
-  prior_splits = best_splits;
-  recoveries = 0;
-  recovery_message = 0;
-  new_record = false;
-  splits = {};
-  split_count = 0;
-  split_message = split_delta = 0;
-  select_reference();
-  previous_best = reference_splits.back();
-  mode = Mode::Countdown;
-  record_pose();
+void Game::Restart() {
+  Segment = 1;
+  Furthest = 1;
+  CarPosition = Road[1].Position;
+  Yaw = Road[1].Heading;
+  CameraYaw = Yaw;
+  GroundY = CarPosition.CoordinateY;
+  CameraHeight = CarPosition.CoordinateY;
+  VerticalSpeed = Pitch = Roll = 0;
+  Airborne = false;
+  SurfaceAvailable = true;
+  Jumps = 0;
+  Velocity = {};
+  Speed = SteeringInput = Lateral = SegmentFraction = Elapsed = Impact = Stranded = Slip = 0;
+  Countdown = Tuning::CountdownSeconds;
+  ShowRecords = false;
+  CinematicTime = ReplayTime = RecordClock = ReplayDuration = 0;
+  ReplayCount = 0;
+  ReplayInterval = Tuning::ReplayInterval;
+  NextSample = ReplayInterval;
+  PriorSplits = BestSplits;
+  Recoveries = 0;
+  RecoveryMessage = 0;
+  NewRecord = false;
+  Splits = {};
+  SplitCount = 0;
+  SplitMessage = SplitDelta = 0;
+  SelectReference();
+  PreviousBest = ReferenceSplits.back();
+  CurrentMode = GameMode::Countdown;
+  RecordPose();
 }
-bool Game::bridge(int node) const {
-  return selected_track == 0 && node >= tuning::BridgeStart && node < tuning::BridgeEnd;
+bool Game::Bridge(int NodeIndex) const {
+  return SelectedTrack == 0 && NodeIndex >= Tuning::BridgeStart && NodeIndex < Tuning::BridgeEnd;
 }
-bool Game::tunnel(int node) const {
-  return selected_track == 2 && node >= tuning::TunnelStart && node < tuning::TunnelEnd;
+bool Game::Tunnel(int NodeIndex) const {
+  return SelectedTrack == 2 && NodeIndex >= Tuning::TunnelStart && NodeIndex < Tuning::TunnelEnd;
 }
-bool Game::coast(int node) const {
-  return selected_track == 1 && node >= tuning::CoastStart && node <= tuning::CoastEnd;
+bool Game::Coast(int NodeIndex) const {
+  return SelectedTrack == 1 && NodeIndex >= Tuning::CoastStart && NodeIndex <= Tuning::CoastEnd;
 }
-bool Game::has_scenery(int node, int sign) const {
-  return !bridge(node) && !bridge(node - 1) && !tunnel(node) && !(coast(node) && sign > 0);
+bool Game::HasScenery(int NodeIndex, int Sign) const {
+  return !Bridge(NodeIndex) && !Bridge(NodeIndex - 1) && !Tunnel(NodeIndex) &&
+         !(Coast(NodeIndex) && Sign > 0);
 }
-bool Game::unlocked(int track) const {
-  for (int previous = 0; previous < track; ++previous) {
-    bool beaten = false;
-    for (int car_index = 0; car_index < CarCount; ++car_index) {
-      int pair = previous * CarCount + car_index;
-      float time = records[pair].splits.back();
-      beaten |= time > 0 && time < Targets[pair].back();
+bool Game::Unlocked(int Track) const {
+  for (int Previous = 0; Previous < Track; ++Previous) {
+    bool Beaten = false;
+    for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex) {
+      int Pair = Previous * CarCount + CarIndex;
+      float TimeValue = Records[Pair].Splits.back();
+      Beaten |= TimeValue > 0 && TimeValue < Targets[Pair].back();
     }
-    if (!beaten)
+    if (!Beaten)
       return false;
   }
   return true;
 }
-void Game::toggle_audio() {
-  muted = !muted;
-  save_requested = true;
+void Game::ToggleAudio() {
+  Muted = !Muted;
+  SaveRequested = true;
 }
-void Game::record_pose(bool final) {
-  if (replay_count == int(replay.size())) {
-    for (int i = 0; i < replay_count / 2; ++i)
-      replay[i] = replay[i * 2];
-    replay_count /= 2;
-    replay_interval *= 2;
-    next_sample = replay_count * replay_interval;
-    if (!final && record_clock + .0001f < next_sample)
+void Game::RecordPose(bool Final) {
+  if (ReplayCount == int(Replay.size())) {
+    for (int Index = 0; Index < ReplayCount / 2; ++Index)
+      Replay[Index] = Replay[Index * 2];
+    ReplayCount /= 2;
+    ReplayInterval *= 2;
+    NextSample = ReplayCount * ReplayInterval;
+    if (!Final && RecordClock + .0001f < NextSample)
       return;
   }
-  Vec offset = car - road[segment].p;
-  auto quantize = [](float value) {
-    return int16_t(std::lround(clamp(value * tuning::PoseScale, -32767, 32767)));
+  Vector3 Offset = CarPosition - Road[Segment].Position;
+  auto Quantize = [](float Value) {
+    return int16_t(std::lround(Clamp(Value * Tuning::PoseScale, -32767, 32767)));
   };
-  replay[replay_count++] = {uint16_t(segment),
-                            quantize(offset.x),
-                            quantize(offset.y),
-                            quantize(offset.z),
-                            int16_t(angle_delta(yaw, 0) * tuning::AngleScale),
-                            int8_t(clamp(pitch * 100, -127, 127)),
-                            int8_t(clamp(roll * 100, -127, 127))};
-  replay_duration = record_clock;
-  next_sample = replay_count * replay_interval;
+  Replay[ReplayCount++] = {uint16_t(Segment),
+                           Quantize(Offset.CoordinateX),
+                           Quantize(Offset.CoordinateY),
+                           Quantize(Offset.CoordinateZ),
+                           int16_t(AngleDelta(Yaw, 0) * Tuning::AngleScale),
+                           int8_t(Clamp(Pitch * 100, -127, 127)),
+                           int8_t(Clamp(Roll * 100, -127, 127))};
+  ReplayDuration = RecordClock;
+  NextSample = ReplayCount * ReplayInterval;
 }
-void Game::replay_tick(float dt) {
-  if (replay_count < 2 || replay_duration <= 0)
+void Game::ReplayTick(float DeltaTimeSeconds) {
+  if (ReplayCount < 2 || ReplayDuration <= 0)
     return;
-  replay_time = std::fmod(replay_time + dt, replay_duration);
-  int index = std::min(replay_count - 2, int(replay_time / replay_interval));
-  float start = index * replay_interval;
-  float end = index == replay_count - 2 ? replay_duration : start + replay_interval;
-  float t = clamp((replay_time - start) / std::max(.001f, end - start), 0, 1);
-  const auto &a = replay[index], &b = replay[index + 1];
-  auto position = [&](const ReplayPose &p) {
-    return road[p.node].p +
-           Vec{p.x / tuning::PoseScale, p.y / tuning::PoseScale, p.z / tuning::PoseScale};
+  ReplayTime = std::fmod(ReplayTime + DeltaTimeSeconds, ReplayDuration);
+  int Index = std::min(ReplayCount - 2, int(ReplayTime / ReplayInterval));
+  float Start = Index * ReplayInterval;
+  float End = Index == ReplayCount - 2 ? ReplayDuration : Start + ReplayInterval;
+  float Fraction = Clamp((ReplayTime - Start) / std::max(.001f, End - Start), 0, 1);
+  const auto &EarlierPose = Replay[Index], &LaterPose = Replay[Index + 1];
+  auto Position = [&](const ReplayPose &Position) {
+    return Road[Position.NodeIndex].Position + Vector3{Position.CoordinateX / Tuning::PoseScale,
+                                                       Position.CoordinateY / Tuning::PoseScale,
+                                                       Position.CoordinateZ / Tuning::PoseScale};
   };
-  Vec pa = position(a), pb = position(b);
-  car = pa + (pb - pa) * t;
-  yaw = a.yaw / tuning::AngleScale +
-        angle_delta(b.yaw / tuning::AngleScale, a.yaw / tuning::AngleScale) * t;
-  pitch = (a.pitch * (1 - t) + b.pitch * t) * .01f;
-  roll = (a.roll * (1 - t) + b.roll * t) * .01f;
-  segment = a.node;
-  locate();
-  camera_yaw = yaw;
-  camera_height = car.y;
-  speed = std::sqrt((pb.x - pa.x) * (pb.x - pa.x) + (pb.z - pa.z) * (pb.z - pa.z)) /
-          std::max(.001f, end - start);
+  Vector3 FirstPoint = Position(EarlierPose), SecondPoint = Position(LaterPose);
+  CarPosition = FirstPoint + (SecondPoint - FirstPoint) * Fraction;
+  Yaw = EarlierPose.Yaw / Tuning::AngleScale +
+        AngleDelta(LaterPose.Yaw / Tuning::AngleScale, EarlierPose.Yaw / Tuning::AngleScale) *
+            Fraction;
+  Pitch = (EarlierPose.Pitch * (1 - Fraction) + LaterPose.Pitch * Fraction) * .01f;
+  Roll = (EarlierPose.Roll * (1 - Fraction) + LaterPose.Roll * Fraction) * .01f;
+  Segment = EarlierPose.NodeIndex;
+  Locate();
+  CameraYaw = Yaw;
+  CameraHeight = CarPosition.CoordinateY;
+  Speed = std::sqrt((SecondPoint.CoordinateX - FirstPoint.CoordinateX) *
+                        (SecondPoint.CoordinateX - FirstPoint.CoordinateX) +
+                    (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ) *
+                        (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ)) /
+          std::max(.001f, End - Start);
 }
-void Game::demo_tick(float dt) {
-  if (!demo_active || demo_time >= tuning::ShowcaseSeconds) {
-    if (!demo_active) {
-      title_car = selected_car;
-      title_track = selected_track;
+void Game::DemoTick(float DeltaTimeSeconds) {
+  if (!DemoActive || DemoTime >= Tuning::ShowcaseSeconds) {
+    if (!DemoActive) {
+      TitleCar = SelectedCar;
+      TitleTrack = SelectedTrack;
     }
-    int next = demo_active ? (selected_track + 1) % TrackCount : 0;
-    demo_active = true;
-    select(title_car, next);
-    segment = next == 0 ? tuning::BridgeStart - 12 : next == 1 ? 45 : tuning::TunnelStart - 14;
-    car = road[segment].p;
-    yaw = camera_yaw = road[segment].heading;
-    ground_y = camera_height = car.y;
-    speed = 18;
-    velocity = {std::sin(yaw) * speed, 0, std::cos(yaw) * speed};
-    demo_time = 0;
-    mode = Mode::Title;
+    int Next = DemoActive ? (SelectedTrack + 1) % TrackCount : 0;
+    DemoActive = true;
+    SelectCarAndTrack(TitleCar, Next);
+    Segment = Next == 0 ? Tuning::BridgeStart - 12 : Next == 1 ? 45 : Tuning::TunnelStart - 14;
+    CarPosition = Road[Segment].Position;
+    Yaw = CameraYaw = Road[Segment].Heading;
+    GroundY = CameraHeight = CarPosition.CoordinateY;
+    Speed = 18;
+    Velocity = {std::sin(Yaw) * Speed, 0, std::cos(Yaw) * Speed};
+    DemoTime = 0;
+    CurrentMode = GameMode::Title;
   }
-  demo_time += dt;
-  float remaining = std::min(dt, tuning::MaxFrameDelta);
-  while (remaining > .00001f) {
-    float step = std::min(tuning::PhysicsStep, remaining);
-    physics(step, driving_input(*this));
-    remaining -= step;
+  DemoTime += DeltaTimeSeconds;
+  float Remaining = std::min(DeltaTimeSeconds, Tuning::MaximumFrameDeltaSeconds);
+  while (Remaining > .00001f) {
+    float Step = std::min(Tuning::PhysicsStep, Remaining);
+    SimulatePhysics(Step, CalculateDrivingInput(*this));
+    Remaining -= Step;
   }
 }
-int Game::section(int node) { return node < 73 ? 0 : node < 151 ? 1 : node < 221 ? 2 : 3; }
-const char *Game::section_name(int node) const {
-  static const char *names[] = {"BRACKEN WOOD", "HIGH MOOR", "SLATE RIDGE", "FERN VALLEY"};
-  static const char *summer[] = {"PALM SHORE", "GOLDEN DUNES", "SUNSTONE", "TIDELINE"};
-  static const char *winter[] = {"PINE GATE", "ICE HOLLOW", "SNOW RIDGE", "FROST VALLEY"};
-  return (selected_track == 0 ? names : selected_track == 1 ? summer : winter)[section(node)];
+int Game::GetSectionIndex(int NodeIndex) {
+  return NodeIndex < 73 ? 0 : NodeIndex < 151 ? 1 : NodeIndex < 221 ? 2 : 3;
 }
-const std::array<float, SectorCount> &Game::default_splits() const {
-  return Targets[selected_track * CarCount + selected_car];
+const char *Game::GetSectionName(int NodeIndex) const {
+  static const char *Names[] = {"BRACKEN WOOD", "HIGH MOOR", "SLATE RIDGE", "FERN VALLEY"};
+  static const char *Summer[] = {"PALM SHORE", "GOLDEN DUNES", "SUNSTONE", "TIDELINE"};
+  static const char *Winter[] = {"PINE GATE", "ICE HOLLOW", "SNOW RIDGE", "FROST VALLEY"};
+  return (SelectedTrack == 0   ? Names
+          : SelectedTrack == 1 ? Summer
+                               : Winter)[GetSectionIndex(NodeIndex)];
 }
-bool Game::icy(int node) const {
-  return selected_track == 2 && ((node >= 74 && node < 110) || (node >= 185 && node < 226));
+const std::array<float, SectorCount> &Game::GetDefaultSplits() const {
+  return Targets[SelectedTrack * CarCount + SelectedCar];
 }
-float Game::surface_grip(int node) const { return icy(node) ? .76f : 1.f; }
-void Game::select(int car_index, int track_index) {
-  selected_car = std::clamp(car_index, 0, CarCount - 1);
-  track_index = std::clamp(track_index, 0, TrackCount - 1);
-  if (selected_track != track_index) {
-    selected_track = track_index;
-    build_track();
+bool Game::Icy(int NodeIndex) const {
+  return SelectedTrack == 2 &&
+         ((NodeIndex >= 74 && NodeIndex < 110) || (NodeIndex >= 185 && NodeIndex < 226));
+}
+float Game::SurfaceGrip(int NodeIndex) const { return Icy(NodeIndex) ? .76f : 1.f; }
+void Game::SelectCarAndTrack(int CarIndex, int TrackIndex) {
+  SelectedCar = std::clamp(CarIndex, 0, CarCount - 1);
+  TrackIndex = std::clamp(TrackIndex, 0, TrackCount - 1);
+  if (SelectedTrack != TrackIndex) {
+    SelectedTrack = TrackIndex;
+    BuildTrack();
   }
-  best_splits = records[selected_track * CarCount + selected_car].splits;
-  best = best_splits.back();
-  restart();
+  BestSplits = Records[SelectedTrack * CarCount + SelectedCar].Splits;
+  Best = BestSplits.back();
+  Restart();
 }
-void Game::select_reference() {
-  reference_splits = (best > 0 && best < default_splits().back() && best_splits[0] > 0)
-                         ? best_splits
-                         : default_splits();
+void Game::SelectReference() {
+  ReferenceSplits = (Best > 0 && Best < GetDefaultSplits().back() && BestSplits[0] > 0)
+                        ? BestSplits
+                        : GetDefaultSplits();
 }
-float Game::terrain_height(int i, float side) const {
-  i = std::clamp(i, 0, NodeCount - 1);
-  const auto &n = road[i];
-  float distance = std::abs(side), verge = n.half_width + .9f, edge = side < 0 ? -verge : verge;
-  float far = side < 0 ? n.far_left : n.far_right,
-        bank = std::min(14.f, verge + (far - verge) * .5f);
-  if (distance <= verge)
-    return n.p.y + side * n.bank;
-  if (bridge(i) || bridge(i - 1))
-    return n.p.y - tuning::RiverDrop * clamp((distance - verge) / 2.f, 0, 1);
-  if (coast(i) && side > 0)
-    return n.p.y -
-           tuning::BeachDrop * clamp((distance - verge) / std::max(1.f, bank - verge), 0, 1);
-  float rise = side < 0 ? n.verge_left : n.verge_right;
-  if (selected_track == 1)
-    rise = .6f + .4f * std::sin(i * .19f);
-  if (selected_track == 2)
-    rise += 5.f;
-  rise *= std::min(1.f, (bank - verge) / 6.f);
-  if (distance <= bank)
-    return n.p.y + edge * n.bank + (rise - edge * n.bank) * (distance - verge) / (bank - verge);
-  return n.p.y + rise +
-         (distance - bank) * (selected_track == 1 ? .025f : (.12f + (side < 0 ? .08f : -.14f)));
+float Game::TerrainHeight(int Index, float Side) const {
+  Index = std::clamp(Index, 0, NodeCount - 1);
+  const auto &Count = Road[Index];
+  float Distance = std::abs(Side), Verge = Count.HalfWidth + .9f, Edge = Side < 0 ? -Verge : Verge;
+  float Far = Side < 0 ? Count.FarLeft : Count.FarRight,
+        Bank = std::min(14.f, Verge + (Far - Verge) * .5f);
+  if (Distance <= Verge)
+    return Count.Position.CoordinateY + Side * Count.Bank;
+  if (Bridge(Index) || Bridge(Index - 1))
+    return Count.Position.CoordinateY - Tuning::RiverDrop * Clamp((Distance - Verge) / 2.f, 0, 1);
+  if (Coast(Index) && Side > 0)
+    return Count.Position.CoordinateY -
+           Tuning::BeachDrop * Clamp((Distance - Verge) / std::max(1.f, Bank - Verge), 0, 1);
+  float Rise = Side < 0 ? Count.VergeLeft : Count.VergeRight;
+  if (SelectedTrack == 1)
+    Rise = .6f + .4f * std::sin(Index * .19f);
+  if (SelectedTrack == 2)
+    Rise += 5.f;
+  Rise *= std::min(1.f, (Bank - Verge) / 6.f);
+  if (Distance <= Bank)
+    return Count.Position.CoordinateY + Edge * Count.Bank +
+           (Rise - Edge * Count.Bank) * (Distance - Verge) / (Bank - Verge);
+  return Count.Position.CoordinateY + Rise +
+         (Distance - Bank) * (SelectedTrack == 1 ? .025f : (.12f + (Side < 0 ? .08f : -.14f)));
 }
-Vec Game::roadside(int i, float side) const {
-  i = std::clamp(i, 0, NodeCount - 1);
-  Vec p = road[i].p + road[i].right * side;
-  p.y = terrain_height(i, side);
-  return p;
+Vector3 Game::Roadside(int Index, float Side) const {
+  Index = std::clamp(Index, 0, NodeCount - 1);
+  Vector3 Position = Road[Index].Position + Road[Index].Right * Side;
+  Position.CoordinateY = TerrainHeight(Index, Side);
+  return Position;
 }
-Vec Game::scenery(int i, int sign) const {
-  return roadside(i, sign * (7.f + float((i * 13 + sign + 5) % 7)));
+Vector3 Game::Scenery(int Index, int Sign) const {
+  return Roadside(Index, Sign * (7.f + float((Index * 13 + Sign + 5) % 7)));
 }
-float Game::road_width() const {
-  return road[segment].half_width * (1 - route_t) + road[segment + 1].half_width * route_t;
+float Game::RoadWidth() const {
+  return Road[Segment].HalfWidth * (1 - SegmentFraction) +
+         Road[Segment + 1].HalfWidth * SegmentFraction;
 }
 // Query the same triangles used by render_road, instead of extrapolating a
 // road-relative height across curved banks, rivers and finite terrain edges.
-bool Game::surface_height(Vec p, float &height) const {
-  bool found = false;
-  auto sample = [&](Vec a, Vec b, Vec c) {
-    const float d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
-    if (std::abs(d) < .0001f)
+bool Game::SurfaceHeight(Vector3 Position, float &Height) const {
+  bool Found = false;
+  auto Sample = [&](Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex) {
+    const float Difference = (SecondVertex.CoordinateZ - ThirdVertex.CoordinateZ) *
+                                 (FirstVertex.CoordinateX - ThirdVertex.CoordinateX) +
+                             (ThirdVertex.CoordinateX - SecondVertex.CoordinateX) *
+                                 (FirstVertex.CoordinateZ - ThirdVertex.CoordinateZ);
+    if (std::abs(Difference) < .0001f)
       return;
-    const float u = ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.z - c.z)) / d;
-    const float v = ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.z - c.z)) / d;
-    if (u < -.0001f || v < -.0001f || u + v > 1.0001f)
+    const float HorizontalFraction = ((SecondVertex.CoordinateZ - ThirdVertex.CoordinateZ) *
+                                          (Position.CoordinateX - ThirdVertex.CoordinateX) +
+                                      (ThirdVertex.CoordinateX - SecondVertex.CoordinateX) *
+                                          (Position.CoordinateZ - ThirdVertex.CoordinateZ)) /
+                                     Difference;
+    const float Value = ((ThirdVertex.CoordinateZ - FirstVertex.CoordinateZ) *
+                             (Position.CoordinateX - ThirdVertex.CoordinateX) +
+                         (FirstVertex.CoordinateX - ThirdVertex.CoordinateX) *
+                             (Position.CoordinateZ - ThirdVertex.CoordinateZ)) /
+                        Difference;
+    if (HorizontalFraction < -.0001f || Value < -.0001f || HorizontalFraction + Value > 1.0001f)
       return;
-    const float y = u * a.y + v * b.y + (1 - u - v) * c.y;
-    if (!found || y > height)
-      height = y;
-    found = true;
+    const float CoordinateY = HorizontalFraction * FirstVertex.CoordinateY +
+                              Value * SecondVertex.CoordinateY +
+                              (1 - HorizontalFraction - Value) * ThirdVertex.CoordinateY;
+    if (!Found || CoordinateY > Height)
+      Height = CoordinateY;
+    Found = true;
   };
-  for (int i = std::max(0, segment - 8); i < std::min(NodeCount - 1, segment + 9); ++i) {
-    const auto &a = terrain[i], &b = terrain[i + 1];
-    for (int strip = 0; strip < 9; ++strip) {
-      if (p.x < std::min({a[strip].x, b[strip].x, a[strip + 1].x, b[strip + 1].x}) ||
-          p.x > std::max({a[strip].x, b[strip].x, a[strip + 1].x, b[strip + 1].x}) ||
-          p.z < std::min({a[strip].z, b[strip].z, a[strip + 1].z, b[strip + 1].z}) ||
-          p.z > std::max({a[strip].z, b[strip].z, a[strip + 1].z, b[strip + 1].z}))
+  for (int Index = std::max(0, Segment - 8); Index < std::min(NodeCount - 1, Segment + 9);
+       ++Index) {
+    const auto &CurrentRing = Terrain[Index], &NextRing = Terrain[Index + 1];
+    for (int Strip = 0; Strip < 9; ++Strip) {
+      if (Position.CoordinateX <
+              std::min({CurrentRing[Strip].CoordinateX, NextRing[Strip].CoordinateX,
+                        CurrentRing[Strip + 1].CoordinateX, NextRing[Strip + 1].CoordinateX}) ||
+          Position.CoordinateX >
+              std::max({CurrentRing[Strip].CoordinateX, NextRing[Strip].CoordinateX,
+                        CurrentRing[Strip + 1].CoordinateX, NextRing[Strip + 1].CoordinateX}) ||
+          Position.CoordinateZ <
+              std::min({CurrentRing[Strip].CoordinateZ, NextRing[Strip].CoordinateZ,
+                        CurrentRing[Strip + 1].CoordinateZ, NextRing[Strip + 1].CoordinateZ}) ||
+          Position.CoordinateZ >
+              std::max({CurrentRing[Strip].CoordinateZ, NextRing[Strip].CoordinateZ,
+                        CurrentRing[Strip + 1].CoordinateZ, NextRing[Strip + 1].CoordinateZ}))
         continue;
       // The renderer walks right-hand banks from the outside inward, so
       // their quad diagonal is reversed relative to the left-hand banks.
-      if (strip >= 6) {
-        sample(a[strip + 1], b[strip + 1], b[strip]);
-        sample(a[strip + 1], b[strip], a[strip]);
+      if (Strip >= 6) {
+        Sample(CurrentRing[Strip + 1], NextRing[Strip + 1], NextRing[Strip]);
+        Sample(CurrentRing[Strip + 1], NextRing[Strip], CurrentRing[Strip]);
       } else {
-        sample(a[strip], b[strip], b[strip + 1]);
-        sample(a[strip], b[strip + 1], a[strip + 1]);
+        Sample(CurrentRing[Strip], NextRing[Strip], NextRing[Strip + 1]);
+        Sample(CurrentRing[Strip], NextRing[Strip + 1], CurrentRing[Strip + 1]);
       }
     }
   }
-  return found;
+  return Found;
 }
-void Game::locate() {
-  float closest = 1.e20f, t_best = 0;
-  int found = segment;
-  for (int i = std::max(0, segment - 8); i <= std::min(NodeCount - 2, segment + 8); ++i) {
-    Vec a = road[i].p, d = road[i + 1].p - a, r = car - a;
-    float t = clamp((r.x * d.x + r.z * d.z) / (d.x * d.x + d.z * d.z), 0, 1);
-    float dx = r.x - t * d.x, dz = r.z - t * d.z, dist = dx * dx + dz * dz;
-    if (dist < closest) {
-      closest = dist;
-      found = i;
-      t_best = t;
+void Game::Locate() {
+  float Closest = 1.e20f, BestFraction = 0;
+  int Found = Segment;
+  for (int Index = std::max(0, Segment - 8); Index <= std::min(NodeCount - 2, Segment + 8);
+       ++Index) {
+    Vector3 FirstVertex = Road[Index].Position,
+            FourthVertex = Road[Index + 1].Position - FirstVertex,
+            RedComponent = CarPosition - FirstVertex;
+    float Fraction = Clamp((RedComponent.CoordinateX * FourthVertex.CoordinateX +
+                            RedComponent.CoordinateZ * FourthVertex.CoordinateZ) /
+                               (FourthVertex.CoordinateX * FourthVertex.CoordinateX +
+                                FourthVertex.CoordinateZ * FourthVertex.CoordinateZ),
+                           0, 1);
+    float HorizontalStep = RedComponent.CoordinateX - Fraction * FourthVertex.CoordinateX,
+          DepthStep = RedComponent.CoordinateZ - Fraction * FourthVertex.CoordinateZ,
+          Dist = HorizontalStep * HorizontalStep + DepthStep * DepthStep;
+    if (Dist < Closest) {
+      Closest = Dist;
+      Found = Index;
+      BestFraction = Fraction;
     }
   }
-  segment = found;
-  route_t = t_best;
-  Vec center = road[found].p + (road[found + 1].p - road[found].p) * t_best;
-  const Vec d = road[found + 1].p - road[found].p;
-  lateral = ((car.x - center.x) * d.z - (car.z - center.z) * d.x) / Step;
-  ground_y =
-      terrain_height(found, lateral) * (1 - t_best) + terrain_height(found + 1, lateral) * t_best;
-  surface_available = true;
-  if (std::abs(lateral) > road_width())
-    surface_available = surface_height(car, ground_y);
-  if (std::abs(lateral) < road_width() + 3)
-    furthest = std::max(furthest, segment);
+  Segment = Found;
+  SegmentFraction = BestFraction;
+  Vector3 Center =
+      Road[Found].Position + (Road[Found + 1].Position - Road[Found].Position) * BestFraction;
+  const Vector3 FourthVertex = Road[Found + 1].Position - Road[Found].Position;
+  Lateral = ((CarPosition.CoordinateX - Center.CoordinateX) * FourthVertex.CoordinateZ -
+             (CarPosition.CoordinateZ - Center.CoordinateZ) * FourthVertex.CoordinateX) /
+            TrackSegmentLength;
+  GroundY = TerrainHeight(Found, Lateral) * (1 - BestFraction) +
+            TerrainHeight(Found + 1, Lateral) * BestFraction;
+  SurfaceAvailable = true;
+  if (std::abs(Lateral) > RoadWidth())
+    SurfaceAvailable = SurfaceHeight(CarPosition, GroundY);
+  if (std::abs(Lateral) < RoadWidth() + 3)
+    Furthest = std::max(Furthest, Segment);
 }
-void Game::recover() {
-  car = road[segment].p;
-  yaw = road[segment].heading;
-  camera_yaw = yaw;
-  ground_y = car.y;
-  camera_height = car.y;
-  vertical_speed = pitch = roll = 0;
-  airborne = false;
-  surface_available = true;
-  velocity = {};
-  speed = 0;
-  steer = 0;
-  lateral = 0;
-  stranded = 0;
-  elapsed += tuning::physics::RecoveryPenalty;
-  ++recoveries;
-  recovery_message = tuning::physics::MessageSeconds;
-  impact = .4f;
+void Game::Recover() {
+  CarPosition = Road[Segment].Position;
+  Yaw = Road[Segment].Heading;
+  CameraYaw = Yaw;
+  GroundY = CarPosition.CoordinateY;
+  CameraHeight = CarPosition.CoordinateY;
+  VerticalSpeed = Pitch = Roll = 0;
+  Airborne = false;
+  SurfaceAvailable = true;
+  Velocity = {};
+  Speed = 0;
+  SteeringInput = 0;
+  Lateral = 0;
+  Stranded = 0;
+  Elapsed += Tuning::Physics::RecoveryPenalty;
+  ++Recoveries;
+  RecoveryMessage = Tuning::Physics::MessageSeconds;
+  Impact = .4f;
 }
-void Game::physics(float dt, const Input &in) {
-  impact = std::max(0.f, impact - dt);
-  recovery_message = std::max(0.f, recovery_message - dt);
-  const float sn = std::sin(yaw), cs = std::cos(yaw);
-  float forward = velocity.x * sn + velocity.z * cs;
-  float side = velocity.x * cs - velocity.z * sn;
-  float target = float(in.right) - float(in.left);
-  steer += (target - steer) * std::min(1.f, dt * tuning::SteeringResponse);
-  float accel = in.throttle ? spec().acceleration : 0.f;
-  if (in.brake)
-    accel = (forward > 1.f) ? -tuning::physics::BrakeDeceleration
-                            : -tuning::physics::ReverseAcceleration;
-  if (in.handbrake && forward > 0)
-    accel -= tuning::physics::HandbrakeDrag;
-  const bool off = std::abs(lateral) > road_width();
-  float grip =
-      in.handbrake
-          ? tuning::physics::HandbrakeGrip
-          : spec().grip / (1.f + std::max(0.f, forward - tuning::physics::GripFalloffSpeed) *
-                                     tuning::physics::GripFalloff);
-  if (in.brake && !in.handbrake)
-    grip *= tuning::physics::BrakingGrip;
-  if (off)
-    grip = tuning::physics::OffroadGrip;
-  grip *= surface_grip(segment);
-  float lateral_accel = -side * grip;
+void Game::SimulatePhysics(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
+  Impact = std::max(0.f, Impact - DeltaTimeSeconds);
+  RecoveryMessage = std::max(0.f, RecoveryMessage - DeltaTimeSeconds);
+  const float RotationSine = std::sin(Yaw), RotationCosine = std::cos(Yaw);
+  float Forward = Velocity.CoordinateX * RotationSine + Velocity.CoordinateZ * RotationCosine;
+  float Side = Velocity.CoordinateX * RotationCosine - Velocity.CoordinateZ * RotationSine;
+  float Target = float(PlayerInput.Right) - float(PlayerInput.Left);
+  SteeringInput +=
+      (Target - SteeringInput) * std::min(1.f, DeltaTimeSeconds * Tuning::SteeringResponse);
+  float Acceleration = PlayerInput.Throttle ? GetCarSpecification().Acceleration : 0.f;
+  if (PlayerInput.Brake)
+    Acceleration = (Forward > 1.f) ? -Tuning::Physics::BrakeDeceleration
+                                   : -Tuning::Physics::ReverseAcceleration;
+  if (PlayerInput.Handbrake && Forward > 0)
+    Acceleration -= Tuning::Physics::HandbrakeDrag;
+  const bool OutsideRoad = std::abs(Lateral) > RoadWidth();
+  float Grip = PlayerInput.Handbrake
+                   ? Tuning::Physics::HandbrakeGrip
+                   : GetCarSpecification().Grip /
+                         (1.f + std::max(0.f, Forward - Tuning::Physics::GripFalloffSpeed) *
+                                    Tuning::Physics::GripFalloff);
+  if (PlayerInput.Brake && !PlayerInput.Handbrake)
+    Grip *= Tuning::Physics::BrakingGrip;
+  if (OutsideRoad)
+    Grip = Tuning::Physics::OffroadGrip;
+  Grip *= SurfaceGrip(Segment);
+  float LateralAccel = -Side * Grip;
   // A finite traction circle: accelerating/braking and cornering share grip.
   // The old exponential lateral damping allowed unlimited cornering force.
-  const float traction =
-      (off ? tuning::physics::OffroadTraction : spec().traction) * surface_grip(segment);
-  const float requested = accel * accel + lateral_accel * lateral_accel;
-  if (requested > traction * traction) {
-    const float scale = traction / std::sqrt(requested);
-    accel *= scale;
-    lateral_accel *= scale;
+  const float Traction =
+      (OutsideRoad ? Tuning::Physics::OffroadTraction : GetCarSpecification().Traction) *
+      SurfaceGrip(Segment);
+  const float Requested = Acceleration * Acceleration + LateralAccel * LateralAccel;
+  if (Requested > Traction * Traction) {
+    const float Scale = Traction / std::sqrt(Requested);
+    Acceleration *= Scale;
+    LateralAccel *= Scale;
   }
-  if (airborne) {
-    accel = 0;
-    lateral_accel = 0;
+  if (Airborne) {
+    Acceleration = 0;
+    LateralAccel = 0;
   }
-  accel -= forward * std::abs(forward) *
-               (off ? tuning::physics::OffroadDrag : tuning::physics::RoadDrag) +
-           forward * tuning::physics::RollingDrag;
-  if (!airborne)
-    accel -= (road[segment + 1].p.y - road[segment].p.y) / Step * tuning::physics::SlopeGravity;
-  forward = clamp(forward + accel * dt, tuning::physics::ReverseSpeed, spec().max_speed);
-  side += lateral_accel * dt;
-  float turn = steer * spec().steering /
-               (1.f + std::abs(forward) * tuning::physics::SteeringFalloff) * forward /
-               tuning::physics::Wheelbase;
-  if (in.handbrake)
-    turn *= tuning::physics::HandbrakeTurn;
-  if (airborne)
-    turn *= tuning::physics::AirborneTurn;
-  yaw += turn * dt;
-  camera_yaw += angle_delta(yaw, camera_yaw) * std::min(1.f, dt * tuning::CameraResponse);
+  Acceleration -= Forward * std::abs(Forward) *
+                      (OutsideRoad ? Tuning::Physics::OffroadDrag : Tuning::Physics::RoadDrag) +
+                  Forward * Tuning::Physics::RollingDrag;
+  if (!Airborne)
+    Acceleration -= (Road[Segment + 1].Position.CoordinateY - Road[Segment].Position.CoordinateY) /
+                    TrackSegmentLength * Tuning::Physics::SlopeGravity;
+  Forward = Clamp(Forward + Acceleration * DeltaTimeSeconds, Tuning::Physics::ReverseSpeed,
+                  GetCarSpecification().MaximumSpeed);
+  Side += LateralAccel * DeltaTimeSeconds;
+  float Turn = SteeringInput * GetCarSpecification().Steering /
+               (1.f + std::abs(Forward) * Tuning::Physics::SteeringFalloff) * Forward /
+               Tuning::Physics::Wheelbase;
+  if (PlayerInput.Handbrake)
+    Turn *= Tuning::Physics::HandbrakeTurn;
+  if (Airborne)
+    Turn *= Tuning::Physics::AirborneTurn;
+  Yaw += Turn * DeltaTimeSeconds;
+  CameraYaw +=
+      AngleDelta(Yaw, CameraYaw) * std::min(1.f, DeltaTimeSeconds * Tuning::CameraResponse);
   // Keep momentum in world space as the chassis turns: this produces real slip.
-  velocity = {sn * forward + cs * side, 0, cs * forward - sn * side};
-  const Vec previous_car = car;
-  car = car + velocity * dt;
-  speed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-  slip = std::abs(side);
-  const float old_ground = ground_y;
-  locate();
-  if (bridge(segment) || tunnel(segment)) {
-    float limit = road_width() + tuning::RailMargin - tuning::CarClearance;
-    if (std::abs(lateral) > limit) {
-      float correction = lateral - clamp(lateral, -limit, limit);
-      car = car - road[segment].right * correction;
-      float outward = velocity.x * road[segment].right.x + velocity.z * road[segment].right.z;
-      if (outward * lateral > 0) {
-        velocity = (velocity - road[segment].right * outward) * .75f;
-        impact = .4f;
+  Velocity = {RotationSine * Forward + RotationCosine * Side, 0,
+              RotationCosine * Forward - RotationSine * Side};
+  const Vector3 PreviousCar = CarPosition;
+  CarPosition = CarPosition + Velocity * DeltaTimeSeconds;
+  Speed = std::sqrt(Velocity.CoordinateX * Velocity.CoordinateX +
+                    Velocity.CoordinateZ * Velocity.CoordinateZ);
+  Slip = std::abs(Side);
+  const float OldGround = GroundY;
+  Locate();
+  if (Bridge(Segment) || Tunnel(Segment)) {
+    float Limit = RoadWidth() + Tuning::RailMargin - Tuning::CarClearance;
+    if (std::abs(Lateral) > Limit) {
+      float Correction = Lateral - Clamp(Lateral, -Limit, Limit);
+      CarPosition = CarPosition - Road[Segment].Right * Correction;
+      float Outward = Velocity.CoordinateX * Road[Segment].Right.CoordinateX +
+                      Velocity.CoordinateZ * Road[Segment].Right.CoordinateZ;
+      if (Outward * Lateral > 0) {
+        Velocity = (Velocity - Road[Segment].Right * Outward) * .75f;
+        Impact = .4f;
       }
-      locate();
-      car.y = std::max(car.y, ground_y);
-      vertical_speed = 0;
+      Locate();
+      CarPosition.CoordinateY = std::max(CarPosition.CoordinateY, GroundY);
+      VerticalSpeed = 0;
     }
   }
-  if (!surface_available) {
-    recover();
+  if (!SurfaceAvailable) {
+    Recover();
     return;
   }
-  const bool off_now = std::abs(lateral) > road_width();
-  const float support_step =
-      tuning::physics::OffroadStep + speed * dt * tuning::physics::MaxBankSlope;
-  if ((off || off_now) && ground_y - car.y > support_step) {
+  const bool OutsideRoadNow = std::abs(Lateral) > RoadWidth();
+  const float SupportStep =
+      Tuning::Physics::OffroadStep + Speed * DeltaTimeSeconds * Tuning::Physics::MaximumBankSlope;
+  if ((OutsideRoad || OutsideRoadNow) && GroundY - CarPosition.CoordinateY > SupportStep) {
     // A steep bank is a collision, not an instantaneous lift onto its top.
-    car = previous_car;
-    velocity = velocity * .2f;
-    speed *= .2f;
-    impact = .4f;
-    vertical_speed = 0;
-    locate();
+    CarPosition = PreviousCar;
+    Velocity = Velocity * .2f;
+    Speed *= .2f;
+    Impact = .4f;
+    VerticalSpeed = 0;
+    Locate();
   }
-  const float ground_velocity =
-      clamp((ground_y - old_ground) / dt, -tuning::physics::MaxSupportSpeed,
-            tuning::physics::MaxSupportSpeed);
-  if (!airborne && (off || off_now) && car.y - ground_y > support_step) {
-    airborne = true;
-    vertical_speed = std::min(0.f, vertical_speed);
+  const float GroundVelocity =
+      Clamp((GroundY - OldGround) / DeltaTimeSeconds, -Tuning::Physics::MaximumSupportSpeed,
+            Tuning::Physics::MaximumSupportSpeed);
+  if (!Airborne && (OutsideRoad || OutsideRoadNow) &&
+      CarPosition.CoordinateY - GroundY > SupportStep) {
+    Airborne = true;
+    VerticalSpeed = std::min(0.f, VerticalSpeed);
   }
   // Convex authored crests launch the car only when road support falls away.
-  const bool crest = (segment >= 155 && segment <= 157) || (segment >= 245 && segment <= 247);
-  if (!airborne && crest && speed > tuning::physics::JumpSpeed &&
-      vertical_speed > tuning::physics::JumpRise &&
-      vertical_speed - ground_velocity > tuning::physics::JumpSupportDrop) {
-    airborne = true;
-    ++jumps;
+  const bool Crest = (Segment >= 155 && Segment <= 157) || (Segment >= 245 && Segment <= 247);
+  if (!Airborne && Crest && Speed > Tuning::Physics::JumpSpeed &&
+      VerticalSpeed > Tuning::Physics::JumpRise &&
+      VerticalSpeed - GroundVelocity > Tuning::Physics::JumpSupportDrop) {
+    Airborne = true;
+    ++Jumps;
   }
-  if (airborne) {
-    vertical_speed -= tuning::Gravity * dt;
-    car.y += vertical_speed * dt;
-    if (car.y <= ground_y) {
-      car.y = ground_y;
-      airborne = false;
-      vertical_speed = ground_velocity;
-      impact = std::max(impact, tuning::physics::LandingImpact);
+  if (Airborne) {
+    VerticalSpeed -= Tuning::Gravity * DeltaTimeSeconds;
+    CarPosition.CoordinateY += VerticalSpeed * DeltaTimeSeconds;
+    if (CarPosition.CoordinateY <= GroundY) {
+      CarPosition.CoordinateY = GroundY;
+      Airborne = false;
+      VerticalSpeed = GroundVelocity;
+      Impact = std::max(Impact, Tuning::Physics::LandingImpact);
     }
   } else {
-    car.y = ground_y;
-    vertical_speed = ground_velocity;
+    CarPosition.CoordinateY = GroundY;
+    VerticalSpeed = GroundVelocity;
   }
-  const Vec direction = road[segment + 1].p - road[segment].p;
-  const float facing = std::cos(angle_delta(yaw, road[segment].heading));
-  const float desired_pitch = airborne
-                                  ? clamp(vertical_speed / std::max(speed, 1.f),
-                                          -tuning::physics::PitchLimit, tuning::physics::PitchLimit)
-                                  : direction.y / Step * facing;
-  pitch += (desired_pitch - pitch) * std::min(1.f, dt * tuning::physics::PitchResponse);
-  roll += (road[segment].bank * facing - steer * speed * tuning::physics::RollLean - roll) *
-          std::min(1.f, dt * tuning::SteeringResponse);
-  camera_height +=
-      (ground_y + std::min(tuning::physics::CameraJumpRise, car.y - ground_y) - camera_height) *
-      std::min(1.f, dt * tuning::SteeringResponse);
+  const Vector3 Direction = Road[Segment + 1].Position - Road[Segment].Position;
+  const float Facing = std::cos(AngleDelta(Yaw, Road[Segment].Heading));
+  const float DesiredPitch = Airborne
+                                 ? Clamp(VerticalSpeed / std::max(Speed, 1.f),
+                                         -Tuning::Physics::PitchLimit, Tuning::Physics::PitchLimit)
+                                 : Direction.CoordinateY / TrackSegmentLength * Facing;
+  Pitch +=
+      (DesiredPitch - Pitch) * std::min(1.f, DeltaTimeSeconds * Tuning::Physics::PitchResponse);
+  Roll += (Road[Segment].Bank * Facing - SteeringInput * Speed * Tuning::Physics::RollLean - Roll) *
+          std::min(1.f, DeltaTimeSeconds * Tuning::SteeringResponse);
+  CameraHeight +=
+      (GroundY + std::min(Tuning::Physics::CameraJumpRise, CarPosition.CoordinateY - GroundY) -
+       CameraHeight) *
+      std::min(1.f, DeltaTimeSeconds * Tuning::SteeringResponse);
   // The same deterministic roadside trees are used for rendering and collision.
-  if (impact <= 0 && std::abs(lateral) > road_width() + 1) {
-    for (int i = std::max(0, segment - 2); i < std::min(NodeCount, segment + 3); ++i) {
-      if (i % 3)
+  if (Impact <= 0 && std::abs(Lateral) > RoadWidth() + 1) {
+    for (int Index = std::max(0, Segment - 2); Index < std::min(NodeCount, Segment + 3); ++Index) {
+      if (Index % 3)
         continue;
-      for (int sign : {-1, 1}) {
-        if (!has_scenery(i, sign))
+      for (int Sign : {-1, 1}) {
+        if (!HasScenery(Index, Sign))
           continue;
-        Vec p = scenery(i, sign);
-        float dx = car.x - p.x, dz = car.z - p.z;
-        if (dx * dx + dz * dz < tuning::physics::TreeCollisionRadiusSquared) {
-          float len = std::sqrt(dx * dx + dz * dz);
-          if (len < .01f) {
-            dx = 1;
-            dz = 0;
-            len = 1;
+        Vector3 Position = Scenery(Index, Sign);
+        float HorizontalStep = CarPosition.CoordinateX - Position.CoordinateX,
+              DepthStep = CarPosition.CoordinateZ - Position.CoordinateZ;
+        if (HorizontalStep * HorizontalStep + DepthStep * DepthStep <
+            Tuning::Physics::TreeCollisionRadiusSquared) {
+          float Length = std::sqrt(HorizontalStep * HorizontalStep + DepthStep * DepthStep);
+          if (Length < .01f) {
+            HorizontalStep = 1;
+            DepthStep = 0;
+            Length = 1;
           }
-          car.x = p.x + dx / len * tuning::physics::TreeClearance;
-          car.z = p.z + dz / len * tuning::physics::TreeClearance;
-          velocity = velocity * tuning::physics::TreeBounce;
-          impact = tuning::physics::TreeImpact;
-          locate();
-          if (!surface_available) {
-            recover();
+          CarPosition.CoordinateX =
+              Position.CoordinateX + HorizontalStep / Length * Tuning::Physics::TreeClearance;
+          CarPosition.CoordinateZ =
+              Position.CoordinateZ + DepthStep / Length * Tuning::Physics::TreeClearance;
+          Velocity = Velocity * Tuning::Physics::TreeBounce;
+          Impact = Tuning::Physics::TreeImpact;
+          Locate();
+          if (!SurfaceAvailable) {
+            Recover();
             return;
           }
-          if (!airborne)
-            car.y = ground_y;
-          vertical_speed = 0;
+          if (!Airborne)
+            CarPosition.CoordinateY = GroundY;
+          VerticalSpeed = 0;
         }
       }
     }
   }
-  if (std::abs(lateral) > tuning::physics::StrandedDistance ||
-      (speed < tuning::physics::StrandedSpeed && in.throttle &&
-       std::abs(lateral) > road_width() + 1))
-    stranded += dt;
+  if (std::abs(Lateral) > Tuning::Physics::StrandedDistance ||
+      (Speed < Tuning::Physics::StrandedSpeed && PlayerInput.Throttle &&
+       std::abs(Lateral) > RoadWidth() + 1))
+    Stranded += DeltaTimeSeconds;
   else
-    stranded = 0;
-  if (stranded > tuning::physics::RecoveryDelay ||
-      std::abs(lateral) > tuning::physics::RecoveryDistance)
-    recover();
+    Stranded = 0;
+  if (Stranded > Tuning::Physics::RecoveryDelay ||
+      std::abs(Lateral) > Tuning::Physics::RecoveryDistance)
+    Recover();
 }
-void Game::tick(float dt, const Input &in) {
-  if (!std::isfinite(dt) || dt <= 0)
+void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
+  if (!std::isfinite(DeltaTimeSeconds) || DeltaTimeSeconds <= 0)
     return;
-  if (in.mute || (in.auxiliary && (mode == Mode::Title || mode == Mode::Paused)))
-    toggle_audio();
-  cinematic_time += std::min(dt, tuning::MaxFrameDelta);
-  menu_rotation += std::min(dt, .1f) * .65f;
-  const bool left_edge = in.left && !menu_left, right_edge = in.right && !menu_right;
-  menu_left = in.left;
-  menu_right = in.right;
-  if (mode == Mode::Title) {
-    if (in.action) {
-      if (demo_active)
-        select(title_car, title_track);
-      demo_active = false;
-      mode = Mode::CarSelect;
+  if (PlayerInput.Mute || (PlayerInput.Auxiliary &&
+                           (CurrentMode == GameMode::Title || CurrentMode == GameMode::Paused)))
+    ToggleAudio();
+  CinematicTime += std::min(DeltaTimeSeconds, Tuning::MaximumFrameDeltaSeconds);
+  MenuRotation += std::min(DeltaTimeSeconds, .1f) * .65f;
+  const bool LeftEdge = PlayerInput.Left && !MenuLeft, RightEdge = PlayerInput.Right && !MenuRight;
+  MenuLeft = PlayerInput.Left;
+  MenuRight = PlayerInput.Right;
+  if (CurrentMode == GameMode::Title) {
+    if (PlayerInput.Action) {
+      if (DemoActive)
+        SelectCarAndTrack(TitleCar, TitleTrack);
+      DemoActive = false;
+      CurrentMode = GameMode::CarSelect;
     } else
-      demo_tick(dt);
+      DemoTick(DeltaTimeSeconds);
     return;
   }
-  if (mode == Mode::CarSelect || mode == Mode::TrackSelect) {
-    const Mode selection_mode = mode;
-    const int move = int(right_edge) - int(left_edge);
-    if (move) {
-      select(selection_mode == Mode::CarSelect ? (selected_car + move + CarCount) % CarCount
-                                               : selected_car,
-             selection_mode == Mode::TrackSelect ? (selected_track + move + TrackCount) % TrackCount
-                                                 : selected_track);
-      mode = selection_mode;
+  if (CurrentMode == GameMode::CarSelect || CurrentMode == GameMode::TrackSelect) {
+    const GameMode SelectionMode = CurrentMode;
+    const int Move = int(RightEdge) - int(LeftEdge);
+    if (Move) {
+      SelectCarAndTrack(
+          SelectionMode == GameMode::CarSelect ? (SelectedCar + Move + CarCount) % CarCount
+                                               : SelectedCar,
+          SelectionMode == GameMode::TrackSelect ? (SelectedTrack + Move + TrackCount) % TrackCount
+                                                 : SelectedTrack);
+      CurrentMode = SelectionMode;
     }
-    if (in.back)
-      mode = selection_mode == Mode::CarSelect ? Mode::Title : Mode::CarSelect;
-    else if (in.action) {
-      if (selection_mode == Mode::CarSelect)
-        mode = Mode::TrackSelect;
-      else if (unlocked(selected_track)) {
-        restart();
-        save_requested = true;
+    if (PlayerInput.Back)
+      CurrentMode = SelectionMode == GameMode::CarSelect ? GameMode::Title : GameMode::CarSelect;
+    else if (PlayerInput.Action) {
+      if (SelectionMode == GameMode::CarSelect)
+        CurrentMode = GameMode::TrackSelect;
+      else if (Unlocked(SelectedTrack)) {
+        Restart();
+        SaveRequested = true;
       }
     }
     return;
   }
-  if (mode == Mode::Finished) {
-    if (in.back) {
-      select(selected_car, selected_track);
-      mode = Mode::TrackSelect;
-    } else if (in.action)
-      restart();
+  if (CurrentMode == GameMode::Finished) {
+    if (PlayerInput.Back) {
+      SelectCarAndTrack(SelectedCar, SelectedTrack);
+      CurrentMode = GameMode::TrackSelect;
+    } else if (PlayerInput.Action)
+      Restart();
     else {
-      if (in.auxiliary)
-        show_records = !show_records;
-      replay_tick(dt);
+      if (PlayerInput.Auxiliary)
+        ShowRecords = !ShowRecords;
+      ReplayTick(DeltaTimeSeconds);
     }
     return;
   }
-  if (in.pause) {
-    if (mode == Mode::Paused)
-      mode = resume_mode;
+  if (PlayerInput.Pause) {
+    if (CurrentMode == GameMode::Paused)
+      CurrentMode = ResumeMode;
     else {
-      resume_mode = mode;
-      mode = Mode::Paused;
+      ResumeMode = CurrentMode;
+      CurrentMode = GameMode::Paused;
     }
     return;
   }
-  if (mode == Mode::Paused) {
-    if (in.back)
-      mode = Mode::CarSelect;
-    else if (in.action)
-      restart();
+  if (CurrentMode == GameMode::Paused) {
+    if (PlayerInput.Back)
+      CurrentMode = GameMode::CarSelect;
+    else if (PlayerInput.Action)
+      Restart();
     return;
   }
-  if (mode == Mode::Countdown) {
-    countdown -= dt;
-    if (countdown <= 0) {
-      mode = Mode::Racing;
-      countdown = 0;
+  if (CurrentMode == GameMode::Countdown) {
+    Countdown -= DeltaTimeSeconds;
+    if (Countdown <= 0) {
+      CurrentMode = GameMode::Racing;
+      Countdown = 0;
     }
     return;
   }
-  elapsed += dt;
-  split_message = std::max(0.f, split_message - dt);
+  Elapsed += DeltaTimeSeconds;
+  SplitMessage = std::max(0.f, SplitMessage - DeltaTimeSeconds);
   // Fixed upper substep makes steering/grip independent of display frame rate.
-  float remaining = std::min(dt, tuning::MaxFrameDelta);
-  while (remaining > .00001f) {
-    float step = std::min(tuning::PhysicsStep, remaining);
-    physics(step, in);
-    record_clock += step;
-    if (record_clock + .0001f >= next_sample)
-      record_pose();
-    remaining -= step;
+  float Remaining = std::min(DeltaTimeSeconds, Tuning::MaximumFrameDeltaSeconds);
+  while (Remaining > .00001f) {
+    float Step = std::min(Tuning::PhysicsStep, Remaining);
+    SimulatePhysics(Step, PlayerInput);
+    RecordClock += Step;
+    if (RecordClock + .0001f >= NextSample)
+      RecordPose();
+    Remaining -= Step;
   }
-  if (split_count < SectorCount && segment + route_t >= SectorEnds[split_count] &&
-      furthest >= SectorEnds[split_count] - 1 && std::abs(lateral) < road_width() + 2) {
-    splits[split_count] = elapsed;
-    split_delta = elapsed - reference_splits[split_count];
-    ++split_count;
-    split_message = tuning::physics::MessageSeconds;
+  if (SplitCount < SectorCount && Segment + SegmentFraction >= SectorEnds[SplitCount] &&
+      Furthest >= SectorEnds[SplitCount] - 1 && std::abs(Lateral) < RoadWidth() + 2) {
+    Splits[SplitCount] = Elapsed;
+    SplitDelta = Elapsed - ReferenceSplits[SplitCount];
+    ++SplitCount;
+    SplitMessage = Tuning::Physics::MessageSeconds;
   }
-  if (split_count == SectorCount) {
-    if (record_clock > replay_duration + .0001f)
-      record_pose(true);
-    mode = Mode::Finished;
-    cinematic_time = replay_time = 0;
-    show_records = false;
-    new_record = (best <= 0 || elapsed < best);
-    if (new_record) {
-      best = elapsed;
-      best_splits = splits;
-      records[selected_track * CarCount + selected_car].splits = splits;
-      save_requested = true;
+  if (SplitCount == SectorCount) {
+    if (RecordClock > ReplayDuration + .0001f)
+      RecordPose(true);
+    CurrentMode = GameMode::Finished;
+    CinematicTime = ReplayTime = 0;
+    ShowRecords = false;
+    NewRecord = (Best <= 0 || Elapsed < Best);
+    if (NewRecord) {
+      Best = Elapsed;
+      BestSplits = Splits;
+      Records[SelectedTrack * CarCount + SelectedCar].Splits = Splits;
+      SaveRequested = true;
     }
   }
 }
 
-float Game::progress() const { return clamp((segment + route_t - 1.f) / (NodeCount - 5.f), 0, 1); }
-static uint32_t checksum(const SaveRecord &r) {
-  uint32_t hash = tuning::FnvOffset;
-  for (uint32_t word : {r.magic, r.version, r.milliseconds, r.course, r.splits[0], r.splits[1],
-                        r.splits[2], r.splits[3]}) {
-    for (int i = 0; i < 4; ++i) {
-      hash = (hash ^ uint8_t(word)) * tuning::FnvPrime;
-      word >>= 8;
+float Game::Progress() const {
+  return Clamp((Segment + SegmentFraction - 1.f) / (NodeCount - 5.f), 0, 1);
+}
+static uint32_t Checksum(const SaveRecord &SavedRecord) {
+  uint32_t Hash = Tuning::HashOffsetBasis;
+  for (uint32_t Word : {SavedRecord.Magic, SavedRecord.Version, SavedRecord.Milliseconds,
+                        SavedRecord.Course, SavedRecord.Splits[0], SavedRecord.Splits[1],
+                        SavedRecord.Splits[2], SavedRecord.Splits[3]}) {
+    for (int Index = 0; Index < 4; ++Index) {
+      Hash = (Hash ^ uint8_t(Word)) * Tuning::HashPrime;
+      Word >>= 8;
     }
   }
-  return hash;
+  return Hash;
 }
-SaveRecord encode_best(float seconds, const std::array<float, SectorCount> &splits) {
-  SaveRecord r{0x52414c59, 2,
-               uint32_t(clamp(seconds * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) + .5f),
-               0};
-  for (int i = 0; i < SectorCount - 1; ++i)
-    r.splits[i] =
-        uint32_t(clamp(splits[i] * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) + .5f);
-  r.checksum = checksum(r);
-  return r;
+SaveRecord EncodeBest(float Seconds, const std::array<float, SectorCount> &Splits) {
+  SaveRecord SavedRecord{
+      0x52414c59, 2,
+      uint32_t(Clamp(Seconds * Tuning::Milliseconds, 0, float(Tuning::MaximumRecordMilliseconds)) +
+               .5f),
+      0};
+  for (int Index = 0; Index < SectorCount - 1; ++Index)
+    SavedRecord.Splits[Index] = uint32_t(
+        Clamp(Splits[Index] * Tuning::Milliseconds, 0, float(Tuning::MaximumRecordMilliseconds)) +
+        .5f);
+  SavedRecord.Checksum = Checksum(SavedRecord);
+  return SavedRecord;
 }
-float decode_best(const SaveRecord &r) {
-  if (r.magic != 0x52414c59 || r.version != 2 || r.course != CourseVersion ||
-      r.milliseconds < 1000 || r.milliseconds > tuning::MaxRecordMs || r.checksum != checksum(r) ||
-      r.splits[0] == 0 || r.splits.back() >= r.milliseconds)
+float DecodeBest(const SaveRecord &SavedRecord) {
+  if (SavedRecord.Magic != 0x52414c59 || SavedRecord.Version != 2 ||
+      SavedRecord.Course != CourseVersion || SavedRecord.Milliseconds < 1000 ||
+      SavedRecord.Milliseconds > Tuning::MaximumRecordMilliseconds ||
+      SavedRecord.Checksum != Checksum(SavedRecord) || SavedRecord.Splits[0] == 0 ||
+      SavedRecord.Splits.back() >= SavedRecord.Milliseconds)
     return 0;
-  for (int i = 1; i < SectorCount - 1; ++i)
-    if (r.splits[i] <= r.splits[i - 1])
+  for (int Index = 1; Index < SectorCount - 1; ++Index)
+    if (SavedRecord.Splits[Index] <= SavedRecord.Splits[Index - 1])
       return 0;
-  return r.milliseconds * .001f;
+  return SavedRecord.Milliseconds * .001f;
 }
-void load_best(Game &game, const SaveRecord &record) {
-  game.best = decode_best(record);
-  game.best_splits = {};
-  if (game.best > 0) {
-    for (int i = 0; i < SectorCount - 1; ++i)
-      game.best_splits[i] = record.splits[i] * .001f;
-    game.best_splits.back() = game.best;
+void LoadBest(Game &GameState, const SaveRecord &SavedRecord) {
+  GameState.Best = DecodeBest(SavedRecord);
+  GameState.BestSplits = {};
+  if (GameState.Best > 0) {
+    for (int Index = 0; Index < SectorCount - 1; ++Index)
+      GameState.BestSplits[Index] = SavedRecord.Splits[Index] * .001f;
+    GameState.BestSplits.back() = GameState.Best;
   }
-  game.records[1].splits = game.best_splits;
-  game.select_reference();
+  GameState.Records[1].Splits = GameState.BestSplits;
+  GameState.SelectReference();
 }
-static uint32_t save_checksum(const SaveData &save) {
-  uint32_t hash = tuning::FnvOffset;
-  auto word = [&](uint32_t v) {
-    for (int i = 0; i < 4; ++i) {
-      hash = (hash ^ uint8_t(v)) * tuning::FnvPrime;
-      v >>= 8;
+static uint32_t SaveChecksum(const SaveData &Save) {
+  uint32_t Hash = Tuning::HashOffsetBasis;
+  auto Word = [&](uint32_t Value) {
+    for (int Index = 0; Index < 4; ++Index) {
+      Hash = (Hash ^ uint8_t(Value)) * Tuning::HashPrime;
+      Value >>= 8;
     }
   };
-  word(save.magic);
-  word(save.version);
-  word(save.car);
-  word(save.track);
-  for (auto &times : save.times)
-    for (auto time : times)
-      word(time);
-  return hash;
+  Word(Save.Magic);
+  Word(Save.Version);
+  Word(Save.CarSelectionAndFlags);
+  Word(Save.Track);
+  for (auto &Times : Save.Times)
+    for (auto TimeValue : Times)
+      Word(TimeValue);
+  return Hash;
 }
-SaveData encode_save(const Game &game) {
-  SaveData save;
-  save.magic = tuning::SaveMagic;
-  save.version = tuning::SaveVersion;
-  save.car = (game.demo_active ? game.title_car : game.selected_car) |
-             (game.muted ? tuning::MutedFlag : 0);
-  save.track = game.demo_active ? game.title_track : game.selected_track;
-  for (int i = 0; i < CarCount * TrackCount; ++i)
-    for (int j = 0; j < SectorCount; ++j)
-      save.times[i][j] = uint32_t(
-          clamp(game.records[i].splits[j] * tuning::Milliseconds, 0, float(tuning::MaxRecordMs)) +
-          .5f);
-  save.checksum = save_checksum(save);
-  return save;
+SaveData EncodeSave(const Game &GameState) {
+  SaveData Save;
+  Save.Magic = Tuning::SaveMagic;
+  Save.Version = Tuning::SaveVersion;
+  Save.CarSelectionAndFlags = (GameState.DemoActive ? GameState.TitleCar : GameState.SelectedCar) |
+                              (GameState.Muted ? Tuning::MutedFlag : 0);
+  Save.Track = GameState.DemoActive ? GameState.TitleTrack : GameState.SelectedTrack;
+  for (int Index = 0; Index < CarCount * TrackCount; ++Index)
+    for (int OtherIndex = 0; OtherIndex < SectorCount; ++OtherIndex)
+      Save.Times[Index][OtherIndex] =
+          uint32_t(Clamp(GameState.Records[Index].Splits[OtherIndex] * Tuning::Milliseconds, 0,
+                         float(Tuning::MaximumRecordMilliseconds)) +
+                   .5f);
+  Save.Checksum = SaveChecksum(Save);
+  return Save;
 }
-bool valid_save(const SaveData &save) {
-  const unsigned car = save.car & tuning::SelectionMask;
-  if (save.magic != tuning::SaveMagic ||
-      (save.version != 1 && save.version != tuning::SaveVersion) ||
-      (save.car & ~(tuning::SelectionMask | (save.version == 2 ? tuning::MutedFlag : 0u))) ||
-      car >= CarCount || save.track >= TrackCount || save.checksum != save_checksum(save))
+bool ValidSave(const SaveData &Save) {
+  const unsigned CarIndex = Save.CarSelectionAndFlags & Tuning::SelectionMask;
+  if (Save.Magic != Tuning::SaveMagic ||
+      (Save.Version != 1 && Save.Version != Tuning::SaveVersion) ||
+      (Save.CarSelectionAndFlags &
+       ~(Tuning::SelectionMask | (Save.Version == 2 ? Tuning::MutedFlag : 0u))) ||
+      CarIndex >= CarCount || Save.Track >= TrackCount || Save.Checksum != SaveChecksum(Save))
     return false;
-  for (auto &times : save.times) {
-    if (times.back() == 0) {
-      for (auto t : times)
-        if (t)
+  for (auto &Times : Save.Times) {
+    if (Times.back() == 0) {
+      for (auto Fraction : Times)
+        if (Fraction)
           return false;
     } else {
-      if (times.front() == 0 || times.back() > tuning::MaxRecordMs)
+      if (Times.front() == 0 || Times.back() > Tuning::MaximumRecordMilliseconds)
         return false;
-      for (int i = 1; i < SectorCount; ++i)
-        if (times[i] <= times[i - 1])
+      for (int Index = 1; Index < SectorCount; ++Index)
+        if (Times[Index] <= Times[Index - 1])
           return false;
     }
   }
   return true;
 }
-bool load_save(Game &game, const SaveData &save) {
-  if (!valid_save(save))
+bool LoadSave(Game &GameState, const SaveData &Save) {
+  if (!ValidSave(Save))
     return false;
-  const unsigned car = save.car & tuning::SelectionMask;
-  for (int i = 0; i < CarCount * TrackCount; ++i)
-    for (int j = 0; j < SectorCount; ++j)
-      game.records[i].splits[j] = save.times[i][j] * .001f;
-  game.muted = save.version == tuning::SaveVersion && (save.car & tuning::MutedFlag);
-  game.select(int(car), int(save.track));
-  game.mode = Mode::Title;
+  const unsigned CarIndex = Save.CarSelectionAndFlags & Tuning::SelectionMask;
+  for (int Index = 0; Index < CarCount * TrackCount; ++Index)
+    for (int OtherIndex = 0; OtherIndex < SectorCount; ++OtherIndex)
+      GameState.Records[Index].Splits[OtherIndex] = Save.Times[Index][OtherIndex] * .001f;
+  GameState.Muted =
+      Save.Version == Tuning::SaveVersion && (Save.CarSelectionAndFlags & Tuning::MutedFlag);
+  GameState.SelectCarAndTrack(int(CarIndex), int(Save.Track));
+  GameState.CurrentMode = GameMode::Title;
   return true;
 }
-} // namespace rally
+} // namespace Rally

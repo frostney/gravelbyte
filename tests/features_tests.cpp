@@ -4,130 +4,142 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-using namespace rally;
-static void check(bool ok, const char *message) {
-  if (!ok) {
-    std::fprintf(stderr, "FAIL: %s\n", message);
+using namespace Rally;
+static void Check(bool Passed, const char *Message) {
+  if (!Passed) {
+    std::fprintf(stderr, "FAIL: %s\n", Message);
     std::exit(1);
   }
 }
 int main() {
-  Game g;
-  auto original = g.road;
-  g.select(1, 1);
-  check(std::abs(g.road[100].p.x - original[100].p.x) > 20, "summer is a distinct course");
-  g.select(1, 2);
-  check(std::abs(g.road[100].p.x - original[100].p.x) > 20, "winter is a distinct course");
-  check(g.icy(85) && g.surface_grip(85) < g.surface_grip(55), "ice has local traction changes");
-  g.select(1, 0);
-  for (int i = 0; i < NodeCount; ++i)
-    check(g.road[i].p.x == original[i].p.x && g.road[i].p.y == original[i].p.y,
+  Game GameState;
+  auto Original = GameState.Road;
+  GameState.SelectCarAndTrack(1, 1);
+  Check(std::abs(GameState.Road[100].Position.CoordinateX - Original[100].Position.CoordinateX) >
+            20,
+        "summer is a distinct course");
+  GameState.SelectCarAndTrack(1, 2);
+  Check(std::abs(GameState.Road[100].Position.CoordinateX - Original[100].Position.CoordinateX) >
+            20,
+        "winter is a distinct course");
+  Check(GameState.Icy(85) && GameState.SurfaceGrip(85) < GameState.SurfaceGrip(55),
+        "ice has local traction changes");
+  GameState.SelectCarAndTrack(1, 0);
+  for (int Index = 0; Index < NodeCount; ++Index)
+    Check(GameState.Road[Index].Position.CoordinateX == Original[Index].Position.CoordinateX &&
+              GameState.Road[Index].Position.CoordinateY == Original[Index].Position.CoordinateY,
           "returning to Bracken preserves original course");
-  std::array<float, 3> speeds{};
-  for (int car = 0; car < CarCount; ++car) {
-    g.select(car, 0);
-    Input gas;
-    gas.throttle = true;
-    for (int i = 0; i < 100; ++i)
-      g.physics(.01f, gas);
-    speeds[car] = g.speed;
+  std::array<float, 3> Speeds{};
+  for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex) {
+    GameState.SelectCarAndTrack(CarIndex, 0);
+    DrivingInput Gas;
+    Gas.Throttle = true;
+    for (int Index = 0; Index < 100; ++Index)
+      GameState.SimulatePhysics(.01f, Gas);
+    Speeds[CarIndex] = GameState.Speed;
   }
-  check(speeds[0] < speeds[1] && speeds[1] < speeds[2],
+  Check(Speeds[0] < Speeds[1] && Speeds[1] < Speeds[2],
         "acceleration bars match measured acceleration");
-  for (int i = 0; i < CarCount * TrackCount; ++i)
-    for (int split = 0; split < SectorCount; ++split)
-      g.records[i].splits[split] = float(20 * split + 10 + i);
-  g.select(2, 2);
-  SaveData save = encode_save(g);
-  Game restored;
-  check(load_save(restored, save), "nine records load");
-  check(restored.selected_car == 2 && restored.selected_track == 2, "selections persist");
-  for (int track = 0; track < TrackCount; ++track)
-    for (int car = 0; car < CarCount; ++car) {
-      restored.select(car, track);
-      check(std::abs(restored.best - float(90 + track * 3 + car)) < .001f,
+  for (int Index = 0; Index < CarCount * TrackCount; ++Index)
+    for (int Split = 0; Split < SectorCount; ++Split)
+      GameState.Records[Index].Splits[Split] = float(20 * Split + 10 + Index);
+  GameState.SelectCarAndTrack(2, 2);
+  SaveData Save = EncodeSave(GameState);
+  Game Restored;
+  Check(LoadSave(Restored, Save), "nine records load");
+  Check(Restored.SelectedCar == 2 && Restored.SelectedTrack == 2, "selections persist");
+  for (int Track = 0; Track < TrackCount; ++Track)
+    for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex) {
+      Restored.SelectCarAndTrack(CarIndex, Track);
+      Check(std::abs(Restored.Best - float(90 + Track * 3 + CarIndex)) < .001f,
             "records isolated by car and track");
     }
-  for (size_t byte = 0; byte < sizeof(save); ++byte) {
-    auto damaged = save;
-    reinterpret_cast<unsigned char *>(&damaged)[byte] ^= 1;
-    check(!load_save(restored, damaged), "every corrupted byte is rejected");
+  for (size_t Byte = 0; Byte < sizeof(Save); ++Byte) {
+    auto Damaged = Save;
+    reinterpret_cast<unsigned char *>(&Damaged)[Byte] ^= 1;
+    Check(!LoadSave(Restored, Damaged), "every corrupted byte is rejected");
   }
-  Game legacy;
-  load_best(legacy, encode_best(92.f, {18, 36, 54, 74, 92}));
-  legacy.select(0, 0);
-  check(legacy.best == 0, "legacy record is not assigned to easy car");
-  legacy.select(1, 0);
-  check(std::abs(legacy.best - 92.f) < .001f, "legacy record stays with Standard Bracken");
-  g.mode = Mode::CarSelect;
-  g.selected_car = 0;
-  Input right;
-  right.right = true;
-  g.tick(.02f, right);
-  g.tick(.02f, right);
-  check(g.selected_car == 1, "holding select does not skip cars");
-  g.tick(.02f, {});
-  g.tick(.02f, right);
-  check(g.selected_car == 2, "released select can advance again");
-  auto renderer = std::make_unique<Renderer>();
-  std::array<uint16_t, W * H> pixels{};
+  Game Legacy;
+  LoadBest(Legacy, EncodeBest(92.f, {18, 36, 54, 74, 92}));
+  Legacy.SelectCarAndTrack(0, 0);
+  Check(Legacy.Best == 0, "legacy record is not assigned to easy car");
+  Legacy.SelectCarAndTrack(1, 0);
+  Check(std::abs(Legacy.Best - 92.f) < .001f, "legacy record stays with Standard Bracken");
+  GameState.CurrentMode = GameMode::CarSelect;
+  GameState.SelectedCar = 0;
+  DrivingInput Right;
+  Right.Right = true;
+  GameState.Update(.02f, Right);
+  GameState.Update(.02f, Right);
+  Check(GameState.SelectedCar == 1, "holding select does not skip cars");
+  GameState.Update(.02f, {});
+  GameState.Update(.02f, Right);
+  Check(GameState.SelectedCar == 2, "released select can advance again");
+  auto SceneRenderer = std::make_unique<Renderer>();
+  std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels{};
   // Partitioned shadow must still cover the ground and obey foreground depth.
-  for (float yaw : {0.f, .4f, 1.2f, 2.7f})
-    for (float bank : {-.12f, 0.f, .12f}) {
-      renderer->pixels = pixels.data();
-      pixels.fill(0);
-      renderer->depth_buffer.fill(0);
-      renderer->face_count = 0;
-      renderer->shadow_count = 0;
-      renderer->dropped = 0;
-      ++renderer->render_frame;
-      renderer->camera_x = 0;
-      renderer->camera_y = 256;
-      renderer->camera_z = -320;
-      renderer->sine = 0;
-      renderer->cosine = 16384;
-      renderer->shadow_enabled = true;
-      renderer->shadow_center = {0, 0, 5};
-      renderer->shadow_sin = std::sin(yaw);
-      renderer->shadow_cos = std::cos(yaw);
-      renderer->shadow_width = 1;
-      renderer->shadow_length = 1.8f;
-      renderer->shadow_min_x = -3;
-      renderer->shadow_max_x = 3;
-      renderer->shadow_min_z = 2;
-      renderer->shadow_max_z = 8;
-      renderer->shadow_enabled = false;
-      renderer->ground_quad({-6, -6 * bank, 1}, {6, 6 * bank, 1}, {6, 6 * bank, 20},
-                            {-6, -6 * bank, 20}, color(10, 10, 10));
-      for (int i = 0; i < renderer->face_count; ++i)
-        renderer->raster(renderer->faces[i]);
-      const auto unshadowed = pixels;
-      pixels.fill(0);
-      renderer->face_count = 0;
-      renderer->depth_buffer.fill(0);
-      renderer->shadow_enabled = true;
-      renderer->ground_quad({-6, -6 * bank, 1}, {6, 6 * bank, 1}, {6, 6 * bank, 20},
-                            {-6, -6 * bank, 20}, color(10, 10, 10));
-      for (int i = 0; i < renderer->face_count; ++i)
-        renderer->raster(renderer->faces[i]);
-      int dark = 0;
-      for (auto p : pixels)
-        if (p && ((p >> 12) < 8))
-          ++dark;
-      check(dark > 15, "ground shadow remains visible on slopes at different car headings");
-      for (int y = 2; y < H - 2; ++y)
-        for (int x = 2; x < W - 2; ++x) {
-          bool interior = true;
-          for (int dy = -2; dy <= 2; ++dy)
-            for (int dx = -2; dx <= 2; ++dx)
-              interior &= unshadowed[(y + dy) * W + x + dx] != 0;
-          if (interior)
-            check(pixels[y * W + x] != 0, "shadow material introduces no ground holes");
+  for (float Yaw : {0.f, .4f, 1.2f, 2.7f})
+    for (float Bank : {-.12f, 0.f, .12f}) {
+      SceneRenderer->Pixels = Pixels.data();
+      Pixels.fill(0);
+      SceneRenderer->DepthBuffer.fill(0);
+      SceneRenderer->FaceCount = 0;
+      SceneRenderer->ShadowCount = 0;
+      SceneRenderer->Dropped = 0;
+      ++SceneRenderer->RenderFrame;
+      SceneRenderer->CameraX = 0;
+      SceneRenderer->CameraY = 256;
+      SceneRenderer->CameraZ = -320;
+      SceneRenderer->CameraSineFixed = 0;
+      SceneRenderer->CameraCosineFixed = 16384;
+      SceneRenderer->ShadowEnabled = true;
+      SceneRenderer->ShadowCenter = {0, 0, 5};
+      SceneRenderer->ShadowSine = std::sin(Yaw);
+      SceneRenderer->ShadowCosine = std::cos(Yaw);
+      SceneRenderer->ShadowWidth = 1;
+      SceneRenderer->ShadowLength = 1.8f;
+      SceneRenderer->ShadowMinimumX = -3;
+      SceneRenderer->ShadowMaximumX = 3;
+      SceneRenderer->ShadowMinimumZ = 2;
+      SceneRenderer->ShadowMaximumZ = 8;
+      SceneRenderer->ShadowEnabled = false;
+      SceneRenderer->DrawGroundQuadrilateral({-6, -6 * Bank, 1}, {6, 6 * Bank, 1},
+                                             {6, 6 * Bank, 20}, {-6, -6 * Bank, 20},
+                                             MakeColor(10, 10, 10));
+      for (int Index = 0; Index < SceneRenderer->FaceCount; ++Index)
+        SceneRenderer->RasterizeTriangle(SceneRenderer->Faces[Index]);
+      const auto Unshadowed = Pixels;
+      Pixels.fill(0);
+      SceneRenderer->FaceCount = 0;
+      SceneRenderer->DepthBuffer.fill(0);
+      SceneRenderer->ShadowEnabled = true;
+      SceneRenderer->DrawGroundQuadrilateral({-6, -6 * Bank, 1}, {6, 6 * Bank, 1},
+                                             {6, 6 * Bank, 20}, {-6, -6 * Bank, 20},
+                                             MakeColor(10, 10, 10));
+      for (int Index = 0; Index < SceneRenderer->FaceCount; ++Index)
+        SceneRenderer->RasterizeTriangle(SceneRenderer->Faces[Index]);
+      int Dark = 0;
+      for (auto Position : Pixels)
+        if (Position && ((Position >> 12) < 8))
+          ++Dark;
+      Check(Dark > 15, "ground shadow remains visible on slopes at different car headings");
+      for (int CoordinateY = 2; CoordinateY < FramebufferHeight - 2; ++CoordinateY)
+        for (int CoordinateX = 2; CoordinateX < FramebufferWidth - 2; ++CoordinateX) {
+          bool Interior = true;
+          for (int VerticalStep = -2; VerticalStep <= 2; ++VerticalStep)
+            for (int HorizontalStep = -2; HorizontalStep <= 2; ++HorizontalStep)
+              Interior &= Unshadowed[(CoordinateY + VerticalStep) * FramebufferWidth + CoordinateX +
+                                     HorizontalStep] != 0;
+          if (Interior)
+            Check(Pixels[CoordinateY * FramebufferWidth + CoordinateX] != 0,
+                  "shadow material introduces no ground holes");
         }
       // A close foreground face must cover the shadow just as it covers the road.
-      Renderer::Triangle front{{0, 119, 60}, {119, 119, 0}, {50000, 50000, 50000}, color(15, 2, 2)};
-      renderer->raster(front);
-      check(pixels[80 * W + 60] == front.color, "foreground geometry occludes shadow");
+      Renderer::Triangle Front{
+          {0, 119, 60}, {119, 119, 0}, {50000, 50000, 50000}, MakeColor(15, 2, 2)};
+      SceneRenderer->RasterizeTriangle(Front);
+      Check(Pixels[80 * FramebufferWidth + 60] == Front.SurfaceColor,
+            "foreground geometry occludes shadow");
     }
   std::puts("PASS: track identity, acceleration, nine records, corruption, migration, selection "
             "edges, ground shadow");

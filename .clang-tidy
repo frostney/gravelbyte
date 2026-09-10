@@ -1,0 +1,12 @@
+Checks: '-*,readability-identifier-naming,readability-identifier-length'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/src/.*'
+CheckOptions:
+  readability-identifier-naming.DefaultCase: CamelCase
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(main|init|update|draw)$'
+  readability-identifier-length.MinimumVariableNameLength: 3
+  readability-identifier-length.MinimumParameterNameLength: 3
+  readability-identifier-length.MinimumLoopCounterNameLength: 3
+  readability-identifier-length.IgnoredVariableNames: '^$'
+  readability-identifier-length.IgnoredParameterNames: '^$'
+  readability-identifier-length.IgnoredLoopCounterNames: '^$'

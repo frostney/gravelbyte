@@ -1,7 +1,7 @@
 # Target calibration
 
 Host Release build, public-input test driver, fixed 20ms frames. Every run
-finishes all five splits without recovery. Mica/Easy targets now allow about 24%, Standard 2.4%,
+finishes all five splits without recovery. Finch 1300/Easy targets now allow about 24%, Standard 2.4%,
 Expert 1.5% over its own completed drive. The Easy allowance increased after the
 player reported being unable to beat any stage. It is a provisional first-win
 adjustment, not a substitute for timed human playtests. Standard/Bracken retains the original

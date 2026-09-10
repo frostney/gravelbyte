@@ -22,14 +22,15 @@ jobs:
       - name: Build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libsdl2-dev
+          sudo apt-get install -y cmake ninja-build libsdl2-dev clang-tidy
           python3 -m pip install clang-format==23.1.0
       - name: Format and native contracts
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           cmake --build build --target format-check
           cmake --build build
           ctest --test-dir build --output-on-failure
+          clang-tidy -p build src/game.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp
       - name: Emscripten 4.0.23
         run: |
           git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"

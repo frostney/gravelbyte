@@ -8,9 +8,9 @@ Choose a car, pick a course and beat five split times across a 1.8km stage.
 
 | Car | Difficulty | Character |
 | --- | --- | --- |
-| Mica | Easy | Compact, lower top speed, stable grip |
-| Torr | Standard | Original demanding rally hatch handling |
-| Kite | Expert | Faster, lower coupe with more lateral slip |
+| Finch 1300 | Easy | Compact, lower top speed, stable grip |
+| Kestrel GT | Standard | Original demanding rally hatch handling |
+| Goshawk Turbo | Expert | Faster, lower coupe with more lateral slip |
 
 Bracken Ridge crosses a river bridge through the forest. Sunmeadow Run follows
 a palm-lined sandy beach beside coastal water. Frostpine Pass winds through snowy mountains
@@ -41,7 +41,7 @@ Keyboard instructions use labelled keycaps. Sound and GitHub use icons; press
 F for fullscreen. Car/track choices and lock requirements are announced through
 an accessible status region, with native menu buttons available to keyboard and
 assistive-technology users. Nonvisual racing itself has not been established.
-Start with Mica; brake before tight bends, release as you turn, and drift sparingly.
+Start with Finch 1300; brake before tight bends, release as you turn, and drift sparingly.
 
 | Action | Keyboard | Standard gamepad | PicoSystem |
 | --- | --- | --- | --- |
@@ -57,7 +57,7 @@ Browser input is captured while the game has focus. Leaving the tab or window
 pauses racing; resume explicitly. Start play to enable audio. Browser records
 and the last chosen car/course are saved locally; unavailable storage leaves
 session-only records. Device records are independent. Existing course-v3 C++
-Bracken Ridge records migrate to Torr only.
+Bracken Ridge records migrate to Kestrel GT only.
 
 To install on PicoSystem, connect USB, hold **X** while switching it on, then copy
 `gravelbyte.uf2` onto **RPI-RP2**. The device restarts automatically.
@@ -68,7 +68,7 @@ C++17 and CMake are shared across native SDL2, Emscripten and PicoSystem builds.
 
 ```sh
 # Native preview and contracts (install SDL2 first)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 
@@ -145,3 +145,12 @@ sampling frequency instead of exhausting device memory. They are session-only.
 [ImageGen prompt](assets/reference/car-track-prompt.md) are retained as design
 references. The game renders its own geometry; the reference is not a screenshot.
 The Pascal experiment belongs to [FemtoPascal](https://github.com/frostney/FemtoPascal).
+
+## Code style
+
+Use descriptive PascalCase identifiers in owned C++ and browser JavaScript.
+Platform entry points and external API names retain their required spelling.
+Run `clang-tidy -p build src/game.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp`
+for naming checks, alongside the existing C++ and web format checks. CI enforces
+the C++ naming rules. Keep save layouts and serialized keys compatible when
+renaming fields.

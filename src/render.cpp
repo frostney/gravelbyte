@@ -7,8 +7,8 @@
 #include "pico/time.h"
 #endif
 
-namespace rally {
-static uint32_t profile_time() {
+namespace Rally {
+static uint32_t ProfileTimeMicroseconds() {
 #ifdef GRAVELBYTE_PROFILE
   return time_us_32();
 #else
@@ -16,986 +16,1156 @@ static uint32_t profile_time() {
 #endif
 }
 Renderer::Renderer() {
-  for (int i = 0; i < int(ridge_heights.size()); ++i)
-    ridge_heights[i] = uint8_t(29 + int(3 * std::sin(i * tuning::Tau * 6 / 512) +
-                                        2 * std::sin(i * tuning::Tau * 14 / 512)));
+  for (int Index = 0; Index < int(RidgeHeights.size()); ++Index)
+    RidgeHeights[Index] =
+        uint8_t(29 + int(3 * std::sin(Index * Tuning::FullTurnRadians * 6 / 512) +
+                         2 * std::sin(Index * Tuning::FullTurnRadians * 14 / 512)));
 }
-uint16_t color(int r, int g, int b) { return uint16_t((r << 12) | (g << 8) | (b << 4) | 15); }
-static uint16_t shade(uint16_t c, int amount) {
-  return color(std::clamp((c >> 12) + amount, 0, 15), std::clamp(((c >> 8) & 15) + amount, 0, 15),
-               std::clamp(((c >> 4) & 15) + amount, 0, 15));
+uint16_t MakeColor(int RedComponent, int GreenComponent, int BlueComponent) {
+  return uint16_t((RedComponent << 12) | (GreenComponent << 8) | (BlueComponent << 4) | 15);
 }
-static uint16_t fog(uint16_t c, int depth) {
-  int t = std::clamp((depth - 35 * 64) * 3 / 2560, 0, 12);
-  int r = ((c >> 12) * (16 - t) + 9 * t) >> 4;
-  int g = (((c >> 8) & 15) * (16 - t) + 10 * t) >> 4;
-  int b = (((c >> 4) & 15) * (16 - t) + 10 * t) >> 4;
-  return color(r, g, b);
+static uint16_t ShadeColor(uint16_t ColorValue, int Amount) {
+  return MakeColor(std::clamp((ColorValue >> 12) + Amount, 0, 15),
+                   std::clamp(((ColorValue >> 8) & 15) + Amount, 0, 15),
+                   std::clamp(((ColorValue >> 4) & 15) + Amount, 0, 15));
 }
-void Renderer::rect(int x, int y, int w, int h, uint16_t c) {
-  for (int py = std::max(0, y); py < std::min(H, y + h); ++py)
-    for (int px = std::max(0, x); px < std::min(W, x + w); ++px)
-      pixels[py * W + px] = c;
+static uint16_t ApplyFog(uint16_t ColorValue, int Depth) {
+  int Fraction = std::clamp((Depth - 35 * 64) * 3 / 2560, 0, 12);
+  int RedComponent = ((ColorValue >> 12) * (16 - Fraction) + 9 * Fraction) >> 4;
+  int GreenComponent = (((ColorValue >> 8) & 15) * (16 - Fraction) + 10 * Fraction) >> 4;
+  int BlueComponent = (((ColorValue >> 4) & 15) * (16 - Fraction) + 10 * Fraction) >> 4;
+  return MakeColor(RedComponent, GreenComponent, BlueComponent);
+}
+void Renderer::DrawRectangle(int CoordinateX, int CoordinateY, int Width, int Height,
+                             uint16_t ColorValue) {
+  for (int PositionY = std::max(0, CoordinateY);
+       PositionY < std::min(FramebufferHeight, CoordinateY + Height); ++PositionY)
+    for (int PositionX = std::max(0, CoordinateX);
+         PositionX < std::min(FramebufferWidth, CoordinateX + Width); ++PositionX)
+      Pixels[PositionY * FramebufferWidth + PositionX] = ColorValue;
 }
 // Three by five uppercase font. Bits run left-to-right, top-to-bottom.
-static uint16_t glyph(char c) {
-  static constexpr const char *letters[] = {
+static uint16_t Glyph(char Character) {
+  static constexpr const char *Letters[] = {
       "010101111101101", "110101110101110", "011100100100011", "110101101101110", "111100110100111",
       "111100110100100", "011100101101011", "101101111101101", "111010010010111", "001001001101010",
       "101101110101101", "100100100100111", "101111111101101", "101111111111101", "010101101101010",
       "110101110100100", "010101101111011", "110101110101101", "011100010001110", "111010010010010",
       "101101101101111", "101101101101010", "101101111111101", "101101010101101", "101101010010010",
       "111001010100111"};
-  static constexpr const char *digits[] = {"111101101101111", "010110010010111", "110001111100111",
+  static constexpr const char *Digits[] = {"111101101101111", "010110010010111", "110001111100111",
                                            "110001010001110", "101101111001001", "111100110001110",
                                            "011100111101111", "111001010010010", "111101111101111",
                                            "111101111001110"};
-  if (c == 's')
+  if (Character == 's')
     return 0x071e;
-  const char *pattern = nullptr;
-  if (c >= 'A' && c <= 'Z')
-    pattern = letters[c - 'A'];
-  if (c >= 'a' && c <= 'z')
-    pattern = letters[c - 'a'];
-  if (c >= '0' && c <= '9')
-    pattern = digits[c - '0'];
-  if (pattern) {
-    uint16_t bits = 0;
-    for (int i = 0; i < 15; ++i)
-      bits = uint16_t((bits << 1) | (pattern[i] == '1'));
-    return bits;
+  const char *Pattern = nullptr;
+  if (Character >= 'A' && Character <= 'Z')
+    Pattern = Letters[Character - 'A'];
+  if (Character >= 'a' && Character <= 'z')
+    Pattern = Letters[Character - 'a'];
+  if (Character >= '0' && Character <= '9')
+    Pattern = Digits[Character - '0'];
+  if (Pattern) {
+    uint16_t Bits = 0;
+    for (int Index = 0; Index < 15; ++Index)
+      Bits = uint16_t((Bits << 1) | (Pattern[Index] == '1'));
+    return Bits;
   }
-  if (c == '<')
+  if (Character == '<')
     return 0x1511;
-  if (c == '>')
+  if (Character == '>')
     return 0x4454;
-  if (c == ':')
+  if (Character == ':')
     return 0x0410;
-  if (c == '.')
+  if (Character == '.')
     return 0x0002;
-  if (c == '-')
+  if (Character == '-')
     return 0x01c0;
-  if (c == '+')
+  if (Character == '+')
     return 0x05d0;
-  if (c == '/')
+  if (Character == '/')
     return 0x12a4;
-  if (c == '!')
+  if (Character == '!')
     return 0x2492;
   return 0;
 }
-void Renderer::text(int x, int y, const char *value, uint16_t c, int scale) {
-  for (; *value; ++value, x += 4 * scale) {
-    uint16_t bits = glyph(*value);
-    for (int row = 0; row < 5; ++row)
-      for (int col = 0; col < 3; ++col)
-        if (bits & (1u << (14 - row * 3 - col)))
-          rect(x + col * scale, y + row * scale, scale, scale, c);
+void Renderer::DrawText(int CoordinateX, int CoordinateY, const char *Value, uint16_t ColorValue,
+                        int Scale) {
+  for (; *Value; ++Value, CoordinateX += 4 * Scale) {
+    uint16_t Bits = Glyph(*Value);
+    for (int Row = 0; Row < 5; ++Row)
+      for (int ColumnIndex = 0; ColumnIndex < 3; ++ColumnIndex)
+        if (Bits & (1u << (14 - Row * 3 - ColumnIndex)))
+          DrawRectangle(CoordinateX + ColumnIndex * Scale, CoordinateY + Row * Scale, Scale, Scale,
+                        ColorValue);
   }
 }
-void Renderer::centered(int y, const char *v, uint16_t c, int scale) {
-  text((W - int(std::strlen(v)) * 4 * scale + scale) / 2, y, v, c, scale);
+void Renderer::DrawCenteredText(int CoordinateY, const char *TextValue, uint16_t ColorValue,
+                                int Scale) {
+  DrawText((FramebufferWidth - int(std::strlen(TextValue)) * 4 * Scale + Scale) / 2, CoordinateY,
+           TextValue, ColorValue, Scale);
 }
-void Renderer::project(CameraVertex &v) {
-  if (v.z < tuning::NearPlane)
+void Renderer::Project(CameraVertex &Vertex) {
+  if (Vertex.CoordinateZ < Tuning::NearPlane)
     return;
-  v.sx =
-      int16_t(std::clamp<int32_t>(tuning::CenterX + tuning::FocalLength * v.x / v.z, -2000, 2000));
-  v.sy = int16_t(std::clamp<int32_t>(projection_y - tuning::FocalLength * v.y / v.z, -2000, 2000));
-  v.inverse_z = uint16_t(tuning::DepthNumerator / v.z);
+  Vertex.ScreenX = int16_t(std::clamp<int32_t>(
+      Tuning::CenterX + Tuning::FocalLength * Vertex.CoordinateX / Vertex.CoordinateZ, -2000,
+      2000));
+  Vertex.ScreenY = int16_t(std::clamp<int32_t>(
+      ProjectionY - Tuning::FocalLength * Vertex.CoordinateY / Vertex.CoordinateZ, -2000, 2000));
+  Vertex.InverseDepth = uint16_t(Tuning::DepthNumerator / Vertex.CoordinateZ);
 }
-Renderer::CameraVertex Renderer::transform(Vec world) {
+Renderer::CameraVertex Renderer::Transform(Vector3 World) {
   // Q6 world positions and Q14 camera basis. The visible radius is <300m,
   // keeping the products comfortably inside signed 32-bit range.
-  const int32_t wx = int32_t(world.x * tuning::WorldScale),
-                wy = int32_t(world.y * tuning::WorldScale),
-                wz = int32_t(world.z * tuning::WorldScale);
-  uint32_t hash = uint32_t(wx) * 73856093u ^ uint32_t(wy) * 19349663u ^ uint32_t(wz) * 83492791u;
-  auto &cached = vertex_cache[(hash ^ (hash >> 16)) & (tuning::VertexCacheSize - 1)];
-  if (cached.frame == render_frame && cached.x == wx && cached.y == wy && cached.z == wz)
-    return cached.transformed;
-  int32_t x = wx - camera_x, y = wy - camera_y, z = wz - camera_z;
-  const int32_t forward = (x * sine + z * cosine) >> tuning::BasisShift;
-  CameraVertex v;
-  v.x = (x * cosine - z * sine) >> tuning::BasisShift;
-  v.y = (y * pitch_cosine + forward * pitch_sine) >> tuning::BasisShift;
-  v.z = (forward * pitch_cosine - y * pitch_sine) >> tuning::BasisShift;
-  project(v);
-  cached = {wx, wy, wz, render_frame, v};
-  return v;
+  const int32_t WorldX = int32_t(World.CoordinateX * Tuning::WorldScale),
+                WorldY = int32_t(World.CoordinateY * Tuning::WorldScale),
+                WorldZ = int32_t(World.CoordinateZ * Tuning::WorldScale);
+  uint32_t Hash =
+      uint32_t(WorldX) * 73856093u ^ uint32_t(WorldY) * 19349663u ^ uint32_t(WorldZ) * 83492791u;
+  auto &Cached = VertexCache[(Hash ^ (Hash >> 16)) & (Tuning::VertexCacheSize - 1)];
+  if (Cached.Frame == RenderFrame && Cached.CoordinateX == WorldX && Cached.CoordinateY == WorldY &&
+      Cached.CoordinateZ == WorldZ)
+    return Cached.Transformed;
+  int32_t CoordinateX = WorldX - CameraX, CoordinateY = WorldY - CameraY,
+          CoordinateZ = WorldZ - CameraZ;
+  const int32_t Forward =
+      (CoordinateX * CameraSineFixed + CoordinateZ * CameraCosineFixed) >> Tuning::BasisShift;
+  CameraVertex Vertex;
+  Vertex.CoordinateX =
+      (CoordinateX * CameraCosineFixed - CoordinateZ * CameraSineFixed) >> Tuning::BasisShift;
+  Vertex.CoordinateY =
+      (CoordinateY * PitchCosineFixed + Forward * PitchSineFixed) >> Tuning::BasisShift;
+  Vertex.CoordinateZ =
+      (Forward * PitchCosineFixed - CoordinateY * PitchSineFixed) >> Tuning::BasisShift;
+  Project(Vertex);
+  Cached = {WorldX, WorldY, WorldZ, RenderFrame, Vertex};
+  return Vertex;
 }
-void Renderer::triangle(Vec a, Vec b, Vec c, uint16_t col) {
-  CameraVertex input[] = {transform(a), transform(b), transform(c)}, clipped[5];
-  if (input[0].z > tuning::FarPlane && input[1].z > tuning::FarPlane &&
-      input[2].z > tuning::FarPlane)
+void Renderer::DrawTriangle(Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex,
+                            uint16_t SurfaceColor) {
+  CameraVertex InputVertices[] = {Transform(FirstVertex), Transform(SecondVertex),
+                                  Transform(ThirdVertex)},
+               Clipped[5];
+  if (InputVertices[0].CoordinateZ > Tuning::FarPlane &&
+      InputVertices[1].CoordinateZ > Tuning::FarPlane &&
+      InputVertices[2].CoordinateZ > Tuning::FarPlane)
     return;
   // Clip against near plane before perspective divide (no road popping at camera).
-  int count = 0;
-  for (int i = 0; i < 3; ++i) {
-    CameraVertex p = input[i], q = input[(i + 1) % 3];
-    bool p_in = p.z >= tuning::NearPlane, q_in = q.z >= tuning::NearPlane;
-    if (p_in)
-      clipped[count++] = p;
-    if (p_in != q_in) {
-      CameraVertex edge;
-      edge.x = p.x + (q.x - p.x) * (tuning::NearPlane - p.z) / (q.z - p.z);
-      edge.y = p.y + (q.y - p.y) * (tuning::NearPlane - p.z) / (q.z - p.z);
-      edge.z = tuning::NearPlane;
-      project(edge);
-      clipped[count++] = edge;
+  int Count = 0;
+  for (int Index = 0; Index < 3; ++Index) {
+    CameraVertex Position = InputVertices[Index], NextPosition = InputVertices[(Index + 1) % 3];
+    bool CurrentInside = Position.CoordinateZ >= Tuning::NearPlane,
+         NextInside = NextPosition.CoordinateZ >= Tuning::NearPlane;
+    if (CurrentInside)
+      Clipped[Count++] = Position;
+    if (CurrentInside != NextInside) {
+      CameraVertex Edge;
+      Edge.CoordinateX =
+          Position.CoordinateX + (NextPosition.CoordinateX - Position.CoordinateX) *
+                                     (Tuning::NearPlane - Position.CoordinateZ) /
+                                     (NextPosition.CoordinateZ - Position.CoordinateZ);
+      Edge.CoordinateY =
+          Position.CoordinateY + (NextPosition.CoordinateY - Position.CoordinateY) *
+                                     (Tuning::NearPlane - Position.CoordinateZ) /
+                                     (NextPosition.CoordinateZ - Position.CoordinateZ);
+      Edge.CoordinateZ = Tuning::NearPlane;
+      Project(Edge);
+      Clipped[Count++] = Edge;
     }
   }
-  for (int i = 1; i < count - 1; ++i) {
-    if (face_count == int(faces.size())) {
-      ++dropped;
+  for (int Index = 1; Index < Count - 1; ++Index) {
+    if (FaceCount == int(Faces.size())) {
+      ++Dropped;
       return;
     }
-    CameraVertex v[] = {clipped[0], clipped[i], clipped[i + 1]};
-    Triangle t{};
-    t.color = fog(col, (v[0].z + v[1].z + v[2].z) / 3);
-    for (int j = 0; j < 3; ++j) {
-      t.x[j] = v[j].sx;
-      t.y[j] = v[j].sy;
-      t.inverse_z[j] = v[j].inverse_z;
+    CameraVertex Vertex[] = {Clipped[0], Clipped[Index], Clipped[Index + 1]};
+    Triangle Face{};
+    Face.SurfaceColor = ApplyFog(
+        SurfaceColor, (Vertex[0].CoordinateZ + Vertex[1].CoordinateZ + Vertex[2].CoordinateZ) / 3);
+    for (int OtherIndex = 0; OtherIndex < 3; ++OtherIndex) {
+      Face.CoordinateX[OtherIndex] = Vertex[OtherIndex].ScreenX;
+      Face.CoordinateY[OtherIndex] = Vertex[OtherIndex].ScreenY;
+      Face.InverseDepth[OtherIndex] = Vertex[OtherIndex].InverseDepth;
     }
-    if (std::max({t.x[0], t.x[1], t.x[2]}) < 0 || std::min({t.x[0], t.x[1], t.x[2]}) >= W ||
-        std::max({t.y[0], t.y[1], t.y[2]}) < 0 || std::min({t.y[0], t.y[1], t.y[2]}) >= H)
+    if (std::max({Face.CoordinateX[0], Face.CoordinateX[1], Face.CoordinateX[2]}) < 0 ||
+        std::min({Face.CoordinateX[0], Face.CoordinateX[1], Face.CoordinateX[2]}) >=
+            FramebufferWidth ||
+        std::max({Face.CoordinateY[0], Face.CoordinateY[1], Face.CoordinateY[2]}) < 0 ||
+        std::min({Face.CoordinateY[0], Face.CoordinateY[1], Face.CoordinateY[2]}) >=
+            FramebufferHeight)
       continue;
-    faces[face_count++] = t;
+    Faces[FaceCount++] = Face;
   }
 }
-// Clip a material mask to the actual ground triangle. Rasterize the original
-// triangle once, so no overlapping surface or new geometry seam can flicker.
-void Renderer::ground_triangle(Vec a, Vec b, Vec c, uint16_t col) {
-  const int start = face_count;
-  triangle(a, b, c, col);
-  if (start == face_count || !shadow_enabled || std::max({a.x, b.x, c.x}) < shadow_min_x ||
-      std::min({a.x, b.x, c.x}) > shadow_max_x || std::max({a.z, b.z, c.z}) < shadow_min_z ||
-      std::min({a.z, b.z, c.z}) > shadow_max_z)
+// Project the complete shadow onto this receiver's plane. The ground triangle
+// supplies coverage and depth; clipping the mask to its edges would round those
+// edges twice and expose bright seams between neighbouring receiver triangles.
+void Renderer::DrawGroundTriangle(Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex,
+                                  uint16_t SurfaceColor) {
+  const int Start = FaceCount;
+  DrawTriangle(FirstVertex, SecondVertex, ThirdVertex, SurfaceColor);
+  if (Start == FaceCount || !ShadowEnabled ||
+      std::max({FirstVertex.CoordinateX, SecondVertex.CoordinateX, ThirdVertex.CoordinateX}) <
+          ShadowMinimumX ||
+      std::min({FirstVertex.CoordinateX, SecondVertex.CoordinateX, ThirdVertex.CoordinateX}) >
+          ShadowMaximumX ||
+      std::max({FirstVertex.CoordinateZ, SecondVertex.CoordinateZ, ThirdVertex.CoordinateZ}) <
+          ShadowMinimumZ ||
+      std::min({FirstVertex.CoordinateZ, SecondVertex.CoordinateZ, ThirdVertex.CoordinateZ}) >
+          ShadowMaximumZ)
     return;
-  struct Vertex {
-    Vec world;
-    float x, z;
-  };
-  auto local = [&](Vec p) {
-    Vec d = p - shadow_center;
-    return Vertex{p, d.x * shadow_cos - d.z * shadow_sin, d.x * shadow_sin + d.z * shadow_cos};
-  };
-  Vertex polygon[8] = {local(a), local(b), local(c)};
-  int count = 3;
-  auto distance = [&](const Vertex &p, int plane) {
-    return plane == 0   ? shadow_width - p.x
-           : plane == 1 ? shadow_width + p.x
-           : plane == 2 ? shadow_length - p.z
-                        : shadow_length + p.z;
-  };
-  for (int plane = 0; plane < 4 && count >= 3; ++plane) {
-    Vertex inside[8];
-    int ni = 0;
-    for (int i = 0; i < count; ++i) {
-      const auto p = polygon[i], q = polygon[(i + 1) % count];
-      float dp = distance(p, plane), dq = distance(q, plane);
-      if (dp >= 0)
-        inside[ni++] = p;
-      if ((dp >= 0) != (dq >= 0)) {
-        float t = dp / (dp - dq);
-        inside[ni++] = {p.world + (q.world - p.world) * t, p.x + (q.x - p.x) * t,
-                        p.z + (q.z - p.z) * t};
-      }
+  const Vector3 FirstEdge = SecondVertex - FirstVertex, SecondEdge = ThirdVertex - FirstVertex;
+  const float Determinant = FirstEdge.CoordinateX * SecondEdge.CoordinateZ -
+                            FirstEdge.CoordinateZ * SecondEdge.CoordinateX;
+  if (std::abs(Determinant) < .00001f)
+    return; // A vertical or degenerate face cannot receive a downward shadow.
+  const float HeightSlopeX = (FirstEdge.CoordinateY * SecondEdge.CoordinateZ -
+                              FirstEdge.CoordinateZ * SecondEdge.CoordinateY) /
+                             Determinant;
+  const float HeightSlopeZ = (FirstEdge.CoordinateX * SecondEdge.CoordinateY -
+                              FirstEdge.CoordinateY * SecondEdge.CoordinateX) /
+                             Determinant;
+  CameraVertex Corners[4];
+  for (int CornerIndex = 0; CornerIndex < 4; ++CornerIndex) {
+    const float LocalX = (CornerIndex == 0 || CornerIndex == 3) ? -ShadowWidth : ShadowWidth;
+    const float LocalZ = CornerIndex < 2 ? -ShadowLength : ShadowLength;
+    Vector3 Position = ShadowCenter + Vector3{LocalX * ShadowCosine + LocalZ * ShadowSine, 0,
+                                              LocalZ * ShadowCosine - LocalX * ShadowSine};
+    Position.CoordinateY = FirstVertex.CoordinateY +
+                           (Position.CoordinateX - FirstVertex.CoordinateX) * HeightSlopeX +
+                           (Position.CoordinateZ - FirstVertex.CoordinateZ) * HeightSlopeZ;
+    Corners[CornerIndex] = Transform(Position);
+  }
+  // Preserve visible mask coverage when only part of it crosses the near plane.
+  CameraVertex ClippedCorners[8];
+  int ClippedCount = 0;
+  for (int CornerIndex = 0; CornerIndex < 4; ++CornerIndex) {
+    const auto Current = Corners[CornerIndex], Next = Corners[(CornerIndex + 1) % 4];
+    const bool CurrentInside = Current.CoordinateZ >= Tuning::NearPlane,
+               NextInside = Next.CoordinateZ >= Tuning::NearPlane;
+    if (CurrentInside)
+      ClippedCorners[ClippedCount++] = Current;
+    if (CurrentInside != NextInside) {
+      CameraVertex Intersection;
+      Intersection.CoordinateX =
+          Current.CoordinateX + (Next.CoordinateX - Current.CoordinateX) *
+                                    (Tuning::NearPlane - Current.CoordinateZ) /
+                                    (Next.CoordinateZ - Current.CoordinateZ);
+      Intersection.CoordinateY =
+          Current.CoordinateY + (Next.CoordinateY - Current.CoordinateY) *
+                                    (Tuning::NearPlane - Current.CoordinateZ) /
+                                    (Next.CoordinateZ - Current.CoordinateZ);
+      Intersection.CoordinateZ = Tuning::NearPlane;
+      Project(Intersection);
+      ClippedCorners[ClippedCount++] = Intersection;
     }
-    count = ni;
-    for (int i = 0; i < count; ++i)
-      polygon[i] = inside[i];
   }
-  if (count < 3)
+  if (ClippedCount < 3)
     return;
-  if (shadow_count == int(shadow_polygons.size())) {
-    ++dropped;
+  if (ShadowCount == int(ShadowPolygons.size())) {
+    ++Dropped;
     return;
   }
-  ShadowPolygon mask;
-  mask.count = count;
-  mask.left = mask.top = 2000;
-  mask.right = mask.bottom = -2000;
-  for (int i = 0; i < count; ++i) {
-    auto v = transform(polygon[i].world);
-    if (v.z < tuning::NearPlane)
-      return;
-    mask.x[i] = v.sx;
-    mask.y[i] = v.sy;
-    mask.left = std::min(mask.left, int(v.sx));
-    mask.right = std::max(mask.right, int(v.sx));
-    mask.top = std::min(mask.top, int(v.sy));
-    mask.bottom = std::max(mask.bottom, int(v.sy));
+  ShadowPolygon Mask;
+  Mask.Count = ClippedCount;
+  Mask.Left = Mask.Top = 2000;
+  Mask.Right = Mask.Bottom = -2000;
+  for (int CornerIndex = 0; CornerIndex < ClippedCount; ++CornerIndex) {
+    const auto &Corner = ClippedCorners[CornerIndex];
+    Mask.CoordinateX[CornerIndex] = Corner.ScreenX;
+    Mask.CoordinateY[CornerIndex] = Corner.ScreenY;
+    Mask.Left = std::min(Mask.Left, int(Corner.ScreenX));
+    Mask.Right = std::max(Mask.Right, int(Corner.ScreenX));
+    Mask.Top = std::min(Mask.Top, int(Corner.ScreenY));
+    Mask.Bottom = std::max(Mask.Bottom, int(Corner.ScreenY));
   }
-  shadow_polygons[shadow_count++] = mask;
-  for (int i = start; i < face_count; ++i)
-    faces[i].shadow = uint16_t(shadow_count);
+  ShadowPolygons[ShadowCount++] = Mask;
+  for (int FaceIndex = Start; FaceIndex < FaceCount; ++FaceIndex)
+    Faces[FaceIndex].Shadow = uint16_t(ShadowCount);
 }
-void Renderer::ground_quad(Vec a, Vec b, Vec c, Vec d, uint16_t col) {
-  ground_triangle(a, b, c, col);
-  ground_triangle(a, c, d, col);
+void Renderer::DrawGroundQuadrilateral(Vector3 FirstVertex, Vector3 SecondVertex,
+                                       Vector3 ThirdVertex, Vector3 FourthVertex,
+                                       uint16_t SurfaceColor) {
+  DrawGroundTriangle(FirstVertex, SecondVertex, ThirdVertex, SurfaceColor);
+  DrawGroundTriangle(FirstVertex, ThirdVertex, FourthVertex, SurfaceColor);
 }
-void Renderer::quad(Vec a, Vec b, Vec c, Vec d, uint16_t col) {
-  triangle(a, b, c, col);
-  triangle(a, c, d, col);
+void Renderer::DrawQuadrilateral(Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex,
+                                 Vector3 FourthVertex, uint16_t SurfaceColor) {
+  DrawTriangle(FirstVertex, SecondVertex, ThirdVertex, SurfaceColor);
+  DrawTriangle(FirstVertex, ThirdVertex, FourthVertex, SurfaceColor);
 }
-void Renderer::box(Vec p, Vec size, float yaw, uint16_t col) {
-  Vec v[8];
-  float sn = yaw == 0 ? 0 : std::sin(yaw), cs = yaw == 0 ? 1 : std::cos(yaw);
-  for (int i = 0; i < 8; ++i) {
-    float x = (i & 1 ? 1 : -1) * size.x * .5f, z = (i & 2 ? 1 : -1) * size.z * .5f;
-    v[i] = p + Vec{x * cs + z * sn, (i & 4) ? size.y : 0, z * cs - x * sn};
+void Renderer::DrawBox(Vector3 Position, Vector3 Size, float Yaw, uint16_t SurfaceColor) {
+  Vector3 Vertex[8];
+  float RotationSine = Yaw == 0 ? 0 : std::sin(Yaw), RotationCosine = Yaw == 0 ? 1 : std::cos(Yaw);
+  for (int Index = 0; Index < 8; ++Index) {
+    float CoordinateX = (Index & 1 ? 1 : -1) * Size.CoordinateX * .5f,
+          CoordinateZ = (Index & 2 ? 1 : -1) * Size.CoordinateZ * .5f;
+    Vertex[Index] = Position + Vector3{CoordinateX * RotationCosine + CoordinateZ * RotationSine,
+                                       (Index & 4) ? Size.CoordinateY : 0,
+                                       CoordinateZ * RotationCosine - CoordinateX * RotationSine};
   }
-  const Vec relative = camera - p;
-  const float local_x = relative.x * cs - relative.z * sn,
-              local_z = relative.x * sn + relative.z * cs;
-  if (local_z < -size.z * .5f)
-    quad(v[0], v[1], v[5], v[4], shade(col, -2));
-  if (local_z > size.z * .5f)
-    quad(v[2], v[3], v[7], v[6], col);
-  if (local_x < -size.x * .5f)
-    quad(v[0], v[2], v[6], v[4], shade(col, -1));
-  if (local_x > size.x * .5f)
-    quad(v[1], v[3], v[7], v[5], col);
-  if (relative.y > size.y)
-    quad(v[4], v[5], v[7], v[6], shade(col, 1));
+  const Vector3 Relative = Camera - Position;
+  const float LocalX = Relative.CoordinateX * RotationCosine - Relative.CoordinateZ * RotationSine,
+              LocalZ = Relative.CoordinateX * RotationSine + Relative.CoordinateZ * RotationCosine;
+  if (LocalZ < -Size.CoordinateZ * .5f)
+    DrawQuadrilateral(Vertex[0], Vertex[1], Vertex[5], Vertex[4], ShadeColor(SurfaceColor, -2));
+  if (LocalZ > Size.CoordinateZ * .5f)
+    DrawQuadrilateral(Vertex[2], Vertex[3], Vertex[7], Vertex[6], SurfaceColor);
+  if (LocalX < -Size.CoordinateX * .5f)
+    DrawQuadrilateral(Vertex[0], Vertex[2], Vertex[6], Vertex[4], ShadeColor(SurfaceColor, -1));
+  if (LocalX > Size.CoordinateX * .5f)
+    DrawQuadrilateral(Vertex[1], Vertex[3], Vertex[7], Vertex[5], SurfaceColor);
+  if (Relative.CoordinateY > Size.CoordinateY)
+    DrawQuadrilateral(Vertex[4], Vertex[5], Vertex[7], Vertex[6], ShadeColor(SurfaceColor, 1));
 }
-void Renderer::tree(Vec p, float height, int seed) {
-  box(p, {.36f, height * .45f, .36f}, 0, color(4, 4, 3));
-  for (int tier = 0; tier < 2; ++tier) {
-    float y = height * (tier ? .38f : .16f), r = height * (tier ? .24f : .33f);
-    Vec tip = p + Vec{0, height * (tier ? 1.f : .77f), 0};
-    Vec a = p + Vec{-r, y, -r}, b = p + Vec{r, y, -r}, c = p + Vec{r, y, r}, d = p + Vec{-r, y, r};
-    uint16_t col = color(2 + seed % 2, 4 + seed % 3, 3 + seed % 2);
-    triangle(a, b, tip, shade(col, -1));
-    triangle(b, c, tip, col);
-    triangle(c, d, tip, shade(col, 1));
-    triangle(d, a, tip, col);
+void Renderer::DrawTree(Vector3 Position, float Height, int Seed) {
+  DrawBox(Position, {.36f, Height * .45f, .36f}, 0, MakeColor(4, 4, 3));
+  for (int Tier = 0; Tier < 2; ++Tier) {
+    float CoordinateY = Height * (Tier ? .38f : .16f), RedComponent = Height * (Tier ? .24f : .33f);
+    Vector3 Tip = Position + Vector3{0, Height * (Tier ? 1.f : .77f), 0};
+    Vector3 FirstVertex = Position + Vector3{-RedComponent, CoordinateY, -RedComponent},
+            SecondVertex = Position + Vector3{RedComponent, CoordinateY, -RedComponent},
+            ThirdVertex = Position + Vector3{RedComponent, CoordinateY, RedComponent},
+            FourthVertex = Position + Vector3{-RedComponent, CoordinateY, RedComponent};
+    uint16_t SurfaceColor = MakeColor(2 + Seed % 2, 4 + Seed % 3, 3 + Seed % 2);
+    DrawTriangle(FirstVertex, SecondVertex, Tip, ShadeColor(SurfaceColor, -1));
+    DrawTriangle(SecondVertex, ThirdVertex, Tip, SurfaceColor);
+    DrawTriangle(ThirdVertex, FourthVertex, Tip, ShadeColor(SurfaceColor, 1));
+    DrawTriangle(FourthVertex, FirstVertex, Tip, SurfaceColor);
   }
 }
-void Renderer::palm_tree(Vec p, float height, int seed) {
+void Renderer::DrawPalmTree(Vector3 Position, float Height, int Seed) {
   // A leaning trunk and broad, drooping fronds give a readable palm silhouette
   // at 120 pixels. Fixed world-space leaves work in every cinematic view.
-  const float lean = (seed % 2 ? 1.f : -1.f) * tuning::PalmLean;
-  const Vec crown = p + Vec{lean, height, .35f};
-  const Vec trunk = {tuning::PalmTrunkWidth, 0, 0};
-  const Vec depth = {0, 0, tuning::PalmTrunkWidth};
-  quad(p - trunk, p + trunk, crown + trunk, crown - trunk, color(8, 6, 3));
-  quad(p - depth, p + depth, crown + depth, crown - depth, color(6, 4, 2));
-  const Vec directions[] = {{1, 0, .3f}, {-.3f, 0, 1}, {-1, 0, -.3f}, {.3f, 0, -1}};
-  for (int leaf = 0; leaf < 4; ++leaf) {
-    Vec along = directions[leaf], across = {-along.z, 0, along.x};
-    Vec mid = crown + along * (tuning::PalmCrownRadius * .5f) + Vec{0, .35f, 0};
-    Vec tip = crown + along * tuning::PalmCrownRadius - Vec{0, 1.2f, 0};
-    Vec left = mid - across * .65f, right = mid + across * .65f;
-    triangle(crown, left, tip, color(3, 8 + leaf % 2, 3));
-    triangle(crown, tip, right, color(2, 6 + leaf % 2, 2));
+  const float Lean = (Seed % 2 ? 1.f : -1.f) * Tuning::PalmLean;
+  const Vector3 Crown = Position + Vector3{Lean, Height, .35f};
+  const Vector3 Trunk = {Tuning::PalmTrunkWidth, 0, 0};
+  const Vector3 Depth = {0, 0, Tuning::PalmTrunkWidth};
+  DrawQuadrilateral(Position - Trunk, Position + Trunk, Crown + Trunk, Crown - Trunk,
+                    MakeColor(8, 6, 3));
+  DrawQuadrilateral(Position - Depth, Position + Depth, Crown + Depth, Crown - Depth,
+                    MakeColor(6, 4, 2));
+  const Vector3 Directions[] = {{1, 0, .3f}, {-.3f, 0, 1}, {-1, 0, -.3f}, {.3f, 0, -1}};
+  for (int Leaf = 0; Leaf < 4; ++Leaf) {
+    Vector3 Along = Directions[Leaf], Across = {-Along.CoordinateZ, 0, Along.CoordinateX};
+    Vector3 Midpoint = Crown + Along * (Tuning::PalmCrownRadius * .5f) + Vector3{0, .35f, 0};
+    Vector3 Tip = Crown + Along * Tuning::PalmCrownRadius - Vector3{0, 1.2f, 0};
+    Vector3 Left = Midpoint - Across * .65f, Right = Midpoint + Across * .65f;
+    DrawTriangle(Crown, Left, Tip, MakeColor(3, 8 + Leaf % 2, 3));
+    DrawTriangle(Crown, Tip, Right, MakeColor(2, 6 + Leaf % 2, 2));
   }
 }
-void Renderer::snow_tree(Vec p, float height, int seed) {
-  box(p, {.36f, height * .45f, .36f}, 0, color(4, 4, 3));
-  for (int tier = 0; tier < 2; ++tier) {
-    float y = height * (tier ? .38f : .16f), r = height * (tier ? .24f : .33f);
-    Vec tip = p + Vec{0, height * (tier ? 1.f : .77f), 0};
-    Vec a = p + Vec{-r, y, -r}, b = p + Vec{r, y, -r}, c = p + Vec{r, y, r}, d = p + Vec{-r, y, r};
-    uint16_t col = color(2 + seed % 2, 4 + seed % 3, 3 + seed % 2);
+void Renderer::DrawSnowTree(Vector3 Position, float Height, int Seed) {
+  DrawBox(Position, {.36f, Height * .45f, .36f}, 0, MakeColor(4, 4, 3));
+  for (int Tier = 0; Tier < 2; ++Tier) {
+    float CoordinateY = Height * (Tier ? .38f : .16f), RedComponent = Height * (Tier ? .24f : .33f);
+    Vector3 Tip = Position + Vector3{0, Height * (Tier ? 1.f : .77f), 0};
+    Vector3 FirstVertex = Position + Vector3{-RedComponent, CoordinateY, -RedComponent},
+            SecondVertex = Position + Vector3{RedComponent, CoordinateY, -RedComponent},
+            ThirdVertex = Position + Vector3{RedComponent, CoordinateY, RedComponent},
+            FourthVertex = Position + Vector3{-RedComponent, CoordinateY, RedComponent};
+    uint16_t SurfaceColor = MakeColor(2 + Seed % 2, 4 + Seed % 3, 3 + Seed % 2);
     // Close the underside when viewed from below a branch tier. The original
     // double-sided open pyramid used its back faces to cover this silhouette.
-    if (camera.y < p.y + y)
-      quad(a, b, c, d, shade(col, -2));
+    if (Camera.CoordinateY < Position.CoordinateY + CoordinateY)
+      DrawQuadrilateral(FirstVertex, SecondVertex, ThirdVertex, FourthVertex,
+                        ShadeColor(SurfaceColor, -2));
     // Exact pyramid face normals: retain every camera-facing face, including
     // all four when looking down from above. Hidden faces cannot affect colour.
-    const float rise = tip.y - (p.y + y), threshold = (tip.y - camera.y) * r;
-    const float x = (camera.x - p.x) * rise, z = (camera.z - p.z) * rise;
-    if (-z >= threshold)
-      triangle(a, b, tip, shade(col, -1));
-    if (x >= threshold)
-      triangle(b, c, tip, col);
-    if (z >= threshold)
-      triangle(c, d, tip, shade(col, 1));
-    if (-x >= threshold)
-      triangle(d, a, tip, col);
+    const float Rise = Tip.CoordinateY - (Position.CoordinateY + CoordinateY),
+                Threshold = (Tip.CoordinateY - Camera.CoordinateY) * RedComponent;
+    const float CoordinateX = (Camera.CoordinateX - Position.CoordinateX) * Rise,
+                CoordinateZ = (Camera.CoordinateZ - Position.CoordinateZ) * Rise;
+    if (-CoordinateZ >= Threshold)
+      DrawTriangle(FirstVertex, SecondVertex, Tip, ShadeColor(SurfaceColor, -1));
+    if (CoordinateX >= Threshold)
+      DrawTriangle(SecondVertex, ThirdVertex, Tip, SurfaceColor);
+    if (CoordinateZ >= Threshold)
+      DrawTriangle(ThirdVertex, FourthVertex, Tip, ShadeColor(SurfaceColor, 1));
+    if (-CoordinateX >= Threshold)
+      DrawTriangle(FourthVertex, FirstVertex, Tip, SurfaceColor);
   }
 }
 // At distance the two branch tiers occupy only a handful of pixels. Keep that
 // silhouette and the snow cap with camera-facing world geometry, avoiding the
 // hidden volume work. Nearby conifers retain the full 3D model.
-void Renderer::distant_snow_tree(Vec p, float height, int seed, bool snow) {
-  const Vec right = {cam_cos, 0, -cam_sin};
-  const float breadth = std::abs(cam_cos) + std::abs(cam_sin);
-  const uint16_t leaves = color(2 + seed % 2, 4 + seed % 3, 3 + seed % 2);
-  quad(p - right * .18f, p + right * .18f, p + right * .18f + Vec{0, height * .45f, 0},
-       p - right * .18f + Vec{0, height * .45f, 0}, color(4, 4, 3));
-  triangle(p - right * (height * .33f * breadth) + Vec{0, height * .16f, 0},
-           p + right * (height * .33f * breadth) + Vec{0, height * .16f, 0},
-           p + Vec{0, height * .77f, 0}, leaves);
-  Vec left = p - right * (height * .24f * breadth) + Vec{0, height * .38f, 0},
-      edge = p + right * (height * .24f * breadth) + Vec{0, height * .38f, 0},
-      tip = p + Vec{0, height, 0};
-  Vec snow_left = left + (tip - left) * .7f, snow_right = edge + (tip - edge) * .7f;
-  quad(left, edge, snow_right, snow_left, leaves);
-  triangle(snow_left, snow_right, tip, snow ? color(14, 15, 15) : leaves);
+void Renderer::DrawDistantSnowTree(Vector3 Position, float Height, int Seed, bool Snow) {
+  const Vector3 Right = {CameraCosine, 0, -CameraSine};
+  const float Breadth = std::abs(CameraCosine) + std::abs(CameraSine);
+  const uint16_t Leaves = MakeColor(2 + Seed % 2, 4 + Seed % 3, 3 + Seed % 2);
+  DrawQuadrilateral(Position - Right * .18f, Position + Right * .18f,
+                    Position + Right * .18f + Vector3{0, Height * .45f, 0},
+                    Position - Right * .18f + Vector3{0, Height * .45f, 0}, MakeColor(4, 4, 3));
+  DrawTriangle(Position - Right * (Height * .33f * Breadth) + Vector3{0, Height * .16f, 0},
+               Position + Right * (Height * .33f * Breadth) + Vector3{0, Height * .16f, 0},
+               Position + Vector3{0, Height * .77f, 0}, Leaves);
+  Vector3 Left = Position - Right * (Height * .24f * Breadth) + Vector3{0, Height * .38f, 0},
+          Edge = Position + Right * (Height * .24f * Breadth) + Vector3{0, Height * .38f, 0},
+          Tip = Position + Vector3{0, Height, 0};
+  Vector3 SnowLeft = Left + (Tip - Left) * .7f, SnowRight = Edge + (Tip - Edge) * .7f;
+  DrawQuadrilateral(Left, Edge, SnowRight, SnowLeft, Leaves);
+  DrawTriangle(SnowLeft, SnowRight, Tip, Snow ? MakeColor(14, 15, 15) : Leaves);
 }
-void Renderer::raster(const Triangle &t) {
-  const ShadowPolygon *shadow = t.shadow ? &shadow_polygons[t.shadow - 1] : nullptr;
-  const uint16_t shadow_color = shadow ? shade(t.color, -4) : t.color;
+void Renderer::RasterizeTriangle(const Triangle &Face) {
+  const ShadowPolygon *Shadow = Face.Shadow ? &ShadowPolygons[Face.Shadow - 1] : nullptr;
+  const uint16_t ShadowColor = Shadow ? ShadeColor(Face.SurfaceColor, -4) : Face.SurfaceColor;
   // Walk the two edges incrementally: divisions happen once per edge, rather
   // than on every scanline. Screen x uses Q16; reciprocal depth uses Q8.
-  int order[] = {0, 1, 2};
-  if (t.y[order[0]] > t.y[order[1]])
-    std::swap(order[0], order[1]);
-  if (t.y[order[1]] > t.y[order[2]])
-    std::swap(order[1], order[2]);
-  if (t.y[order[0]] > t.y[order[1]])
-    std::swap(order[0], order[1]);
-  const int top = order[0], middle = order[1], bottom = order[2];
-  if (t.y[top] == t.y[bottom])
+  int Order[] = {0, 1, 2};
+  if (Face.CoordinateY[Order[0]] > Face.CoordinateY[Order[1]])
+    std::swap(Order[0], Order[1]);
+  if (Face.CoordinateY[Order[1]] > Face.CoordinateY[Order[2]])
+    std::swap(Order[1], Order[2]);
+  if (Face.CoordinateY[Order[0]] > Face.CoordinateY[Order[1]])
+    std::swap(Order[0], Order[1]);
+  const int Top = Order[0], Middle = Order[1], Bottom = Order[2];
+  if (Face.CoordinateY[Top] == Face.CoordinateY[Bottom])
     return;
-  const int long_height = t.y[bottom] - t.y[top];
-  const int long_dx = (int(t.x[bottom]) - t.x[top]) * 65536 / long_height;
-  const int long_dz = (int(t.inverse_z[bottom]) - t.inverse_z[top]) * 256 / long_height;
-  for (int half = 0; half < 2; ++half) {
-    int a = half ? middle : top, b = half ? bottom : middle;
-    int height = t.y[b] - t.y[a];
-    if (height == 0)
+  const int LongHeight = Face.CoordinateY[Bottom] - Face.CoordinateY[Top];
+  const int LongEdgeHorizontalStep =
+      (int(Face.CoordinateX[Bottom]) - Face.CoordinateX[Top]) * 65536 / LongHeight;
+  const int LongEdgeDepthStep =
+      (int(Face.InverseDepth[Bottom]) - Face.InverseDepth[Top]) * 256 / LongHeight;
+  for (int Half = 0; Half < 2; ++Half) {
+    int EdgeStartIndex = Half ? Middle : Top, EdgeEndIndex = Half ? Bottom : Middle;
+    int Height = Face.CoordinateY[EdgeEndIndex] - Face.CoordinateY[EdgeStartIndex];
+    if (Height == 0)
       continue;
-    int first = std::max(0, int(t.y[a])), last = std::min(H, int(t.y[b]));
-    if (first >= last)
+    int First = std::max(0, int(Face.CoordinateY[EdgeStartIndex])),
+        Last = std::min(FramebufferHeight, int(Face.CoordinateY[EdgeEndIndex]));
+    if (First >= Last)
       continue;
-    int dx = (int(t.x[b]) - t.x[a]) * 65536 / height;
-    int dz = (int(t.inverse_z[b]) - t.inverse_z[a]) * 256 / height;
-    int x1 = int(t.x[a]) * 65536 + (first - t.y[a]) * dx;
-    int z1 = int(t.inverse_z[a]) * 256 + (first - t.y[a]) * dz;
-    int x2 = int(t.x[top]) * 65536 + (first - t.y[top]) * long_dx;
-    int z2 = int(t.inverse_z[top]) * 256 + (first - t.y[top]) * long_dz;
-    for (int y = first; y < last; ++y, x1 += dx, z1 += dz, x2 += long_dx, z2 += long_dz) {
-      int lo = x1 >> 16, hi = x2 >> 16, zlo = z1, zhi = z2;
-      if (lo > hi) {
-        std::swap(lo, hi);
-        std::swap(zlo, zhi);
+    int HorizontalStep =
+        (int(Face.CoordinateX[EdgeEndIndex]) - Face.CoordinateX[EdgeStartIndex]) * 65536 / Height;
+    int DepthStep =
+        (int(Face.InverseDepth[EdgeEndIndex]) - Face.InverseDepth[EdgeStartIndex]) * 256 / Height;
+    int FirstX = int(Face.CoordinateX[EdgeStartIndex]) * 65536 +
+                 (First - Face.CoordinateY[EdgeStartIndex]) * HorizontalStep;
+    int FirstDepth = int(Face.InverseDepth[EdgeStartIndex]) * 256 +
+                     (First - Face.CoordinateY[EdgeStartIndex]) * DepthStep;
+    int SecondX = int(Face.CoordinateX[Top]) * 65536 +
+                  (First - Face.CoordinateY[Top]) * LongEdgeHorizontalStep;
+    int SecondDepth =
+        int(Face.InverseDepth[Top]) * 256 + (First - Face.CoordinateY[Top]) * LongEdgeDepthStep;
+    for (int CoordinateY = First; CoordinateY < Last; ++CoordinateY, FirstX += HorizontalStep,
+             FirstDepth += DepthStep, SecondX += LongEdgeHorizontalStep,
+             SecondDepth += LongEdgeDepthStep) {
+      int LowerBound = FirstX >> 16, UpperBound = SecondX >> 16, LeftDepth = FirstDepth,
+          RightDepth = SecondDepth;
+      if (LowerBound > UpperBound) {
+        std::swap(LowerBound, UpperBound);
+        std::swap(LeftDepth, RightDepth);
       }
-      int left = std::max(0, lo), right = std::min(W - 1, hi);
-      if (left > right)
+      int Left = std::max(0, LowerBound), Right = std::min(FramebufferWidth - 1, UpperBound);
+      if (Left > Right)
         continue;
-      int step = hi > lo ? (zhi - zlo) / (hi - lo) : 0, z = zlo + (left - lo) * step;
-      if (!shadow || y < shadow->top || y > shadow->bottom) {
-        for (int x = left; x <= right; ++x, z += step) {
-          const int offset = y * W + x;
-          if ((z >> 8) >= depth_buffer[offset]) {
-            depth_buffer[offset] = uint16_t(z >> 8);
-            pixels[offset] = t.color;
+      int Step = UpperBound > LowerBound ? (RightDepth - LeftDepth) / (UpperBound - LowerBound) : 0,
+          CoordinateZ = LeftDepth + (Left - LowerBound) * Step;
+      if (!Shadow || CoordinateY < Shadow->Top || CoordinateY > Shadow->Bottom) {
+        for (int CoordinateX = Left; CoordinateX <= Right; ++CoordinateX, CoordinateZ += Step) {
+          const int Offset = CoordinateY * FramebufferWidth + CoordinateX;
+          if ((CoordinateZ >> 8) >= DepthBuffer[Offset]) {
+            DepthBuffer[Offset] = uint16_t(CoordinateZ >> 8);
+            Pixels[Offset] = Face.SurfaceColor;
           }
         }
       } else {
         // Intersect the convex material mask once per scanline, not per pixel.
-        int mask_left = W, mask_right = -1;
-        for (int i = 0, j = shadow->count - 1; i < shadow->count; j = i++) {
-          const int y0 = shadow->y[j], y1 = shadow->y[i], x0 = shadow->x[j], x1 = shadow->x[i];
-          if (y < std::min(y0, y1) || y > std::max(y0, y1))
+        int MaskLeft = FramebufferWidth, MaskRight = -1;
+        for (int Index = 0, OtherIndex = Shadow->Count - 1; Index < Shadow->Count;
+             OtherIndex = Index++) {
+          const int StartY = Shadow->CoordinateY[OtherIndex], EndY = Shadow->CoordinateY[Index],
+                    StartX = Shadow->CoordinateX[OtherIndex], FirstX = Shadow->CoordinateX[Index];
+          if (CoordinateY < std::min(StartY, EndY) || CoordinateY > std::max(StartY, EndY))
             continue;
-          if (y0 == y1) {
-            mask_left = std::min(mask_left, std::min(x0, x1));
-            mask_right = std::max(mask_right, std::max(x0, x1));
+          if (StartY == EndY) {
+            MaskLeft = std::min(MaskLeft, std::min(StartX, FirstX));
+            MaskRight = std::max(MaskRight, std::max(StartX, FirstX));
           } else {
-            int x = x0 + (x1 - x0) * (y - y0) / (y1 - y0);
-            mask_left = std::min(mask_left, x);
-            mask_right = std::max(mask_right, x);
+            int CoordinateX = StartX + (FirstX - StartX) * (CoordinateY - StartY) / (EndY - StartY);
+            MaskLeft = std::min(MaskLeft, CoordinateX);
+            MaskRight = std::max(MaskRight, CoordinateX);
           }
         }
-        for (int x = left; x <= right; ++x, z += step) {
-          const int offset = y * W + x;
-          if ((z >> 8) >= depth_buffer[offset]) {
-            depth_buffer[offset] = uint16_t(z >> 8);
-            pixels[offset] = (x >= mask_left && x <= mask_right) ? shadow_color : t.color;
+        for (int CoordinateX = Left; CoordinateX <= Right; ++CoordinateX, CoordinateZ += Step) {
+          const int Offset = CoordinateY * FramebufferWidth + CoordinateX;
+          if ((CoordinateZ >> 8) >= DepthBuffer[Offset]) {
+            DepthBuffer[Offset] = uint16_t(CoordinateZ >> 8);
+            Pixels[Offset] = (CoordinateX >= MaskLeft && CoordinateX <= MaskRight)
+                                 ? ShadowColor
+                                 : Face.SurfaceColor;
           }
         }
       }
     }
   }
 }
-static void time_text(char *out, size_t size, float seconds) {
-  int cs = int(seconds * 100);
-  std::snprintf(out, size, "%02d:%02d.%02d", cs / 6000, (cs / 100) % 60, cs % 100);
+static void TimeText(char *Out, size_t Size, float Seconds) {
+  int Centiseconds = int(Seconds * 100);
+  std::snprintf(Out, Size, "%02d:%02d.%02d", Centiseconds / 6000, (Centiseconds / 100) % 60,
+                Centiseconds % 100);
 }
-void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics) {
-  const uint32_t geometry_start = profile_time();
-  pixels = target;
-  face_count = shadow_count = dropped = 0;
-  depth_buffer.fill(0);
-  const float view_yaw = prepare_camera(g);
-  prepare_shadow(g);
-  render_background(g, view_yaw);
-  if (g.mode != Mode::CarSelect)
-    render_road(g, view_yaw);
-  render_car(g);
-  geometry_us = profile_time() - geometry_start;
-  const uint32_t raster_start = profile_time();
-  for (int i = 0; i < face_count; ++i)
-    raster(faces[i]);
-  raster_us = profile_time() - raster_start;
-  render_ui(g, fps, diagnostics);
+void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSecond,
+                      bool Diagnostics) {
+  const uint32_t GeometryStart = ProfileTimeMicroseconds();
+  Pixels = Target;
+  FaceCount = ShadowCount = Dropped = 0;
+  DepthBuffer.fill(0);
+  const float ViewYaw = PrepareCamera(GameState);
+  PrepareShadow(GameState);
+  RenderBackground(GameState, ViewYaw);
+  if (GameState.CurrentMode != GameMode::CarSelect)
+    RenderRoad(GameState, ViewYaw);
+  RenderCar(GameState);
+  GeometryMicroseconds = ProfileTimeMicroseconds() - GeometryStart;
+  const uint32_t RasterStart = ProfileTimeMicroseconds();
+  for (int Index = 0; Index < FaceCount; ++Index)
+    RasterizeTriangle(Faces[Index]);
+  RasterMicroseconds = ProfileTimeMicroseconds() - RasterStart;
+  RenderInterface(GameState, FramesPerSecond, Diagnostics);
 }
-float Renderer::prepare_camera(const Game &g) {
-  const bool showroom = g.mode == Mode::CarSelect;
-  projection_y = showroom ? tuning::ShowroomCenterY : tuning::CenterY;
-  const bool cinematic = g.mode == Mode::Title || g.mode == Mode::Finished;
-  float view_yaw = g.camera_yaw;
-  cam_sin = std::sin(view_yaw);
-  cam_cos = std::cos(view_yaw);
-  float camera_distance = showroom ? tuning::ShowroomDistance : tuning::ChaseDistance;
-  float height = showroom ? tuning::ShowroomHeight : tuning::ChaseHeight;
-  camera = g.car + Vec{-cam_sin * camera_distance, height, -cam_cos * camera_distance};
-  camera.y = g.camera_height + height;
-  pitch_sine = tuning::ChasePitchSine;
-  pitch_cosine = tuning::ChasePitchCosine;
-  if (cinematic) {
+float Renderer::PrepareCamera(const Game &GameState) {
+  const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
+  ProjectionY = Showroom ? Tuning::ShowroomCenterY : Tuning::CenterY;
+  const bool Cinematic =
+      GameState.CurrentMode == GameMode::Title || GameState.CurrentMode == GameMode::Finished;
+  float ViewYaw = GameState.CameraYaw;
+  CameraSine = std::sin(ViewYaw);
+  CameraCosine = std::cos(ViewYaw);
+  float CameraDistance = Showroom ? Tuning::ShowroomDistance : Tuning::ChaseDistance;
+  float Height = Showroom ? Tuning::ShowroomHeight : Tuning::ChaseHeight;
+  Camera = GameState.CarPosition +
+           Vector3{-CameraSine * CameraDistance, Height, -CameraCosine * CameraDistance};
+  Camera.CoordinateY = GameState.CameraHeight + Height;
+  PitchSineFixed = Tuning::ChasePitchSine;
+  PitchCosineFixed = Tuning::ChasePitchCosine;
+  if (Cinematic) {
     // Planned road-relative shots keep the camera clear of tunnel roofs/walls.
-    bool portal = g.selected_track == 2 &&
-                  g.segment >= tuning::TunnelStart - tuning::PortalCameraMargin &&
-                  g.segment <= tuning::TunnelEnd + tuning::PortalCameraMargin;
-    int shot = portal ? 0 : int(g.cinematic_time / tuning::ShotSeconds) % tuning::CameraShotCount;
-    if (shot == 1) {
-      int node = std::clamp(g.segment + tuning::RoadsideLookAhead, 0, NodeCount - 1);
-      const int next = std::min(NodeCount - 1, node + 1);
-      Vec start = g.roadside(node, -(g.road[node].half_width + tuning::RoadsideOffset));
-      Vec end = g.roadside(next, -(g.road[next].half_width + tuning::RoadsideOffset));
-      camera = start + (end - start) * g.route_t + Vec{0, tuning::RoadsideHeight, 0};
-      camera.y = std::max(camera.y, g.car.y + tuning::RoadsideMinimumHeight);
-    } else if (shot == 2) {
-      camera = g.car + Vec{-cam_sin * tuning::HighShotBack + cam_cos * tuning::HighShotOffset,
-                           tuning::HighShotHeight,
-                           -cam_cos * tuning::HighShotBack - cam_sin * tuning::HighShotOffset};
+    bool Portal = GameState.SelectedTrack == 2 &&
+                  GameState.Segment >= Tuning::TunnelStart - Tuning::PortalCameraMargin &&
+                  GameState.Segment <= Tuning::TunnelEnd + Tuning::PortalCameraMargin;
+    int Shot =
+        Portal ? 0 : int(GameState.CinematicTime / Tuning::ShotSeconds) % Tuning::CameraShotCount;
+    if (Shot == 1) {
+      int NodeIndex = std::clamp(GameState.Segment + Tuning::RoadsideLookAhead, 0, NodeCount - 1);
+      const int Next = std::min(NodeCount - 1, NodeIndex + 1);
+      Vector3 Start = GameState.Roadside(
+          NodeIndex, -(GameState.Road[NodeIndex].HalfWidth + Tuning::RoadsideOffset));
+      Vector3 End =
+          GameState.Roadside(Next, -(GameState.Road[Next].HalfWidth + Tuning::RoadsideOffset));
+      Camera =
+          Start + (End - Start) * GameState.SegmentFraction + Vector3{0, Tuning::RoadsideHeight, 0};
+      Camera.CoordinateY = std::max(Camera.CoordinateY, GameState.CarPosition.CoordinateY +
+                                                            Tuning::RoadsideMinimumHeight);
+    } else if (Shot == 2) {
+      Camera = GameState.CarPosition +
+               Vector3{-CameraSine * Tuning::HighShotBack + CameraCosine * Tuning::HighShotOffset,
+                       Tuning::HighShotHeight,
+                       -CameraCosine * Tuning::HighShotBack - CameraSine * Tuning::HighShotOffset};
     }
-    Vec aim = g.car + Vec{0, tuning::CarAimHeight, 0} - camera;
-    view_yaw = std::atan2(aim.x, aim.z);
-    float horizontal = std::sqrt(aim.x * aim.x + aim.z * aim.z);
-    float pitch_angle = std::atan2(-aim.y, horizontal);
-    pitch_sine = int32_t(std::sin(pitch_angle) * tuning::BasisScale);
-    pitch_cosine = int32_t(std::cos(pitch_angle) * tuning::BasisScale);
-    cam_sin = std::sin(view_yaw);
-    cam_cos = std::cos(view_yaw);
+    Vector3 Aim = GameState.CarPosition + Vector3{0, Tuning::CarAimHeight, 0} - Camera;
+    ViewYaw = std::atan2(Aim.CoordinateX, Aim.CoordinateZ);
+    float Horizontal =
+        std::sqrt(Aim.CoordinateX * Aim.CoordinateX + Aim.CoordinateZ * Aim.CoordinateZ);
+    float PitchAngle = std::atan2(-Aim.CoordinateY, Horizontal);
+    PitchSineFixed = int32_t(std::sin(PitchAngle) * Tuning::BasisScale);
+    PitchCosineFixed = int32_t(std::cos(PitchAngle) * Tuning::BasisScale);
+    CameraSine = std::sin(ViewYaw);
+    CameraCosine = std::cos(ViewYaw);
   }
-  camera_x = int32_t(camera.x * tuning::WorldScale);
-  camera_y = int32_t(camera.y * tuning::WorldScale);
-  camera_z = int32_t(camera.z * tuning::WorldScale);
-  sine = int32_t(cam_sin * tuning::BasisScale);
-  cosine = int32_t(cam_cos * tuning::BasisScale);
-  if (++render_frame == 0) {
-    for (auto &entry : vertex_cache)
-      entry.frame = 0;
-    render_frame = 1;
+  CameraX = int32_t(Camera.CoordinateX * Tuning::WorldScale);
+  CameraY = int32_t(Camera.CoordinateY * Tuning::WorldScale);
+  CameraZ = int32_t(Camera.CoordinateZ * Tuning::WorldScale);
+  CameraSineFixed = int32_t(CameraSine * Tuning::BasisScale);
+  CameraCosineFixed = int32_t(CameraCosine * Tuning::BasisScale);
+  if (++RenderFrame == 0) {
+    for (auto &Entry : VertexCache)
+      Entry.Frame = 0;
+    RenderFrame = 1;
   }
-  return view_yaw;
+  return ViewYaw;
 }
-void Renderer::prepare_shadow(const Game &g) {
-  const bool showroom = g.mode == Mode::CarSelect;
-  shadow_center = g.car;
-  shadow_sin = std::sin(showroom ? g.menu_rotation : g.yaw);
-  shadow_cos = std::cos(showroom ? g.menu_rotation : g.yaw);
-  shadow_width = 1.05f * g.spec().width;
-  shadow_length = 1.8f * g.spec().length;
-  const float extent_x = std::abs(shadow_cos) * shadow_width + std::abs(shadow_sin) * shadow_length;
-  const float extent_z = std::abs(shadow_sin) * shadow_width + std::abs(shadow_cos) * shadow_length;
-  shadow_min_x = g.car.x - extent_x;
-  shadow_max_x = g.car.x + extent_x;
-  shadow_min_z = g.car.z - extent_z;
-  shadow_max_z = g.car.z + extent_z;
+void Renderer::PrepareShadow(const Game &GameState) {
+  const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
+  ShadowCenter = GameState.CarPosition;
+  ShadowSine = std::sin(Showroom ? GameState.MenuRotation : GameState.Yaw);
+  ShadowCosine = std::cos(Showroom ? GameState.MenuRotation : GameState.Yaw);
+  ShadowWidth = 1.05f * GameState.GetCarSpecification().Width;
+  ShadowLength = 1.8f * GameState.GetCarSpecification().Length;
+  const float ExtentX = std::abs(ShadowCosine) * ShadowWidth + std::abs(ShadowSine) * ShadowLength;
+  const float ExtentZ = std::abs(ShadowSine) * ShadowWidth + std::abs(ShadowCosine) * ShadowLength;
+  ShadowMinimumX = GameState.CarPosition.CoordinateX - ExtentX;
+  ShadowMaximumX = GameState.CarPosition.CoordinateX + ExtentX;
+  ShadowMinimumZ = GameState.CarPosition.CoordinateZ - ExtentZ;
+  ShadowMaximumZ = GameState.CarPosition.CoordinateZ + ExtentZ;
 }
-void Renderer::render_background(const Game &g, float view_yaw) {
-  const bool showroom = g.mode == Mode::CarSelect;
+void Renderer::RenderBackground(const Game &GameState, float ViewYaw) {
+  const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
   // Fog-coloured sky, distant wooded ridge; foreground is real world geometry.
-  rect(0, 0, W, H, color(9, 10, 10));
-  rect(0, 0, W, 24, color(10, 11, 12));
-  for (int x = 0; x < W; ++x) {
-    int phase = x + int(view_yaw * 28);
-    int ridge = ridge_heights[unsigned(phase) & (tuning::RidgeSamples - 1)];
-    rect(x, ridge - 5, 1, 29, color(8, 9, 10));
-    rect(x,
-         ridge + 4 + (ridge_heights[(unsigned(phase) + 143) & (tuning::RidgeSamples - 1)] - 29) * 2,
-         1, 28, color(7, 8, 8));
+  DrawRectangle(0, 0, FramebufferWidth, FramebufferHeight, MakeColor(9, 10, 10));
+  DrawRectangle(0, 0, FramebufferWidth, 24, MakeColor(10, 11, 12));
+  for (int CoordinateX = 0; CoordinateX < FramebufferWidth; ++CoordinateX) {
+    int Phase = CoordinateX + int(ViewYaw * 28);
+    int Ridge = RidgeHeights[unsigned(Phase) & (Tuning::RidgeSamples - 1)];
+    DrawRectangle(CoordinateX, Ridge - 5, 1, 29, MakeColor(8, 9, 10));
+    DrawRectangle(CoordinateX,
+                  Ridge + 4 +
+                      (RidgeHeights[(unsigned(Phase) + 143) & (Tuning::RidgeSamples - 1)] - 29) * 2,
+                  1, 28, MakeColor(7, 8, 8));
   }
-  rect(0, 52, W, H - 52, color(6, 7, 5));
-  if (g.selected_track == 1) {
-    rect(0, 0, W, 25, color(9, 12, 13));
-    rect(0, 25, W, 27, color(8, 12, 14));
-    rect(0, 43, W, 9, color(3, 9, 12));
-    rect(0, 52, W, H - 52, color(12, 11, 7));
+  DrawRectangle(0, 52, FramebufferWidth, FramebufferHeight - 52, MakeColor(6, 7, 5));
+  if (GameState.SelectedTrack == 1) {
+    DrawRectangle(0, 0, FramebufferWidth, 25, MakeColor(9, 12, 13));
+    DrawRectangle(0, 25, FramebufferWidth, 27, MakeColor(8, 12, 14));
+    DrawRectangle(0, 43, FramebufferWidth, 9, MakeColor(3, 9, 12));
+    DrawRectangle(0, 52, FramebufferWidth, FramebufferHeight - 52, MakeColor(12, 11, 7));
   }
-  if (g.selected_track == 2) {
-    rect(0, 0, W, 25, color(11, 12, 14));
-    for (int x = 0; x < W; ++x) {
-      int phase = (x + int(view_yaw * 38)) % 48;
-      if (phase < 0)
-        phase += 48;
-      int peak = 15 + std::abs(phase - 24);
-      rect(x, peak, 1, 53 - peak, color(7, 9, 12));
-      rect(x, peak, 1, std::max(1, (39 - peak) / 3), color(14, 15, 15));
+  if (GameState.SelectedTrack == 2) {
+    DrawRectangle(0, 0, FramebufferWidth, 25, MakeColor(11, 12, 14));
+    for (int CoordinateX = 0; CoordinateX < FramebufferWidth; ++CoordinateX) {
+      int Phase = (CoordinateX + int(ViewYaw * 38)) % 48;
+      if (Phase < 0)
+        Phase += 48;
+      int Peak = 15 + std::abs(Phase - 24);
+      DrawRectangle(CoordinateX, Peak, 1, 53 - Peak, MakeColor(7, 9, 12));
+      DrawRectangle(CoordinateX, Peak, 1, std::max(1, (39 - Peak) / 3), MakeColor(14, 15, 15));
     }
-    rect(0, 52, W, H - 52, color(12, 13, 14));
+    DrawRectangle(0, 52, FramebufferWidth, FramebufferHeight - 52, MakeColor(12, 13, 14));
   }
-  if (showroom) {
-    rect(0, 0, W, H, color(1, 2, 3));
-    rect(0, 74, W, 46, color(2, 3, 4));
+  if (Showroom) {
+    DrawRectangle(0, 0, FramebufferWidth, FramebufferHeight, MakeColor(1, 2, 3));
+    DrawRectangle(0, 74, FramebufferWidth, 46, MakeColor(2, 3, 4));
   }
 }
-void Renderer::render_mountain(const Game &g, int first, int last) {
-  if (g.selected_track == 2 && last >= tuning::TunnelStart && first <= tuning::TunnelEnd) {
+void Renderer::RenderMountain(const Game &GameState, int First, int Last) {
+  if (GameState.SelectedTrack == 2 && Last >= Tuning::TunnelStart && First <= Tuning::TunnelEnd) {
     // Broad, cached rock/snow panels enclose the detailed tunnel interior.
-    for (int k = 0; k < tuning::MountainSections; ++k) {
-      const auto &a = g.mountain[k], &b = g.mountain[k + 1];
-      quad(a[0], b[0], b[1], a[1], color(7, 8, 10));
-      quad(a[1], b[1], b[2], a[2], color(11, 13, 14));
-      quad(a[2], b[2], b[3], a[3], color(14, 15, 15));
-      quad(a[3], b[3], b[4], a[4], color(7, 8, 10));
+    for (int SampleIndex = 0; SampleIndex < Tuning::MountainSections; ++SampleIndex) {
+      const auto &CurrentRing = GameState.Mountain[SampleIndex],
+                 &NextRing = GameState.Mountain[SampleIndex + 1];
+      DrawQuadrilateral(CurrentRing[0], NextRing[0], NextRing[1], CurrentRing[1],
+                        MakeColor(7, 8, 10));
+      DrawQuadrilateral(CurrentRing[1], NextRing[1], NextRing[2], CurrentRing[2],
+                        MakeColor(11, 13, 14));
+      DrawQuadrilateral(CurrentRing[2], NextRing[2], NextRing[3], CurrentRing[3],
+                        MakeColor(14, 15, 15));
+      DrawQuadrilateral(CurrentRing[3], NextRing[3], NextRing[4], CurrentRing[4],
+                        MakeColor(7, 8, 10));
     }
-    for (int k : {0, tuning::MountainSections}) {
-      int node = k == 0 ? tuning::TunnelStart : tuning::TunnelEnd;
-      const auto &ring = g.mountain[k];
-      for (int sign : {-1, 1}) {
-        Vec bottom = g.roadside(node, sign * (g.road[node].half_width + tuning::RailMargin));
-        Vec top = bottom + Vec{0, tuning::TunnelHeight, 0};
-        Vec outer = ring[sign < 0 ? 0 : 4], shoulder = ring[sign < 0 ? 1 : 3];
-        quad(outer, bottom, top, shoulder, color(7, 8, 9));
-        triangle(shoulder, top, ring[2], color(10, 11, 12));
-        Vec center = g.road[node].p + Vec{0, tuning::TunnelHeight, 0};
-        triangle(top, center, ring[2], color(12, 13, 14));
+    for (int SampleIndex : {0, Tuning::MountainSections}) {
+      int NodeIndex = SampleIndex == 0 ? Tuning::TunnelStart : Tuning::TunnelEnd;
+      const auto &Ring = GameState.Mountain[SampleIndex];
+      for (int Sign : {-1, 1}) {
+        Vector3 Bottom = GameState.Roadside(
+            NodeIndex, Sign * (GameState.Road[NodeIndex].HalfWidth + Tuning::RailMargin));
+        Vector3 Top = Bottom + Vector3{0, Tuning::TunnelHeight, 0};
+        Vector3 Outer = Ring[Sign < 0 ? 0 : 4], Shoulder = Ring[Sign < 0 ? 1 : 3];
+        DrawQuadrilateral(Outer, Bottom, Top, Shoulder, MakeColor(7, 8, 9));
+        DrawTriangle(Shoulder, Top, Ring[2], MakeColor(10, 11, 12));
+        Vector3 Center = GameState.Road[NodeIndex].Position + Vector3{0, Tuning::TunnelHeight, 0};
+        DrawTriangle(Top, Center, Ring[2], MakeColor(12, 13, 14));
       }
     }
   }
 }
-void Renderer::render_road(const Game &g, float view_yaw) {
-  bool reverse_view = std::cos(view_yaw - g.road[g.segment].heading) < 0;
-  const int view_distance = g.selected_track == 2 ? tuning::SnowRoadAhead : tuning::RoadAhead;
-  const int behind = reverse_view ? view_distance : tuning::RoadBehind;
-  const int ahead = reverse_view ? tuning::RoadBehind : view_distance;
-  const int first = std::max(0, g.segment - behind),
-            last = std::min(NodeCount - 1, g.segment + ahead);
-  render_mountain(g, first, last);
-  for (int i = first; i < last; ++i) {
-    shadow_enabled = std::abs(i - g.segment) <= 2;
-    const int zone = Game::section(i);
-    const uint16_t grasses[] = {color(4, 6, 3), color(7, 7, 4), color(6, 6, 5), color(3, 6, 4)};
-    const uint16_t gravels[] = {color(9, 9, 7), color(10, 9, 7), color(8, 8, 8), color(8, 8, 6)};
-    uint16_t grass = grasses[zone], roadcol = gravels[zone];
-    if (g.selected_track == 1) {
-      grass = color(14, 12, 8);
-      roadcol = color(12, 10, 6);
+void Renderer::RenderRoad(const Game &GameState, float ViewYaw) {
+  bool ReverseView = std::cos(ViewYaw - GameState.Road[GameState.Segment].Heading) < 0;
+  const int ViewDistance = GameState.SelectedTrack == 2 ? Tuning::SnowRoadAhead : Tuning::RoadAhead;
+  const int Behind = ReverseView ? ViewDistance : Tuning::RoadBehind;
+  const int Ahead = ReverseView ? Tuning::RoadBehind : ViewDistance;
+  const int First = std::max(0, GameState.Segment - Behind),
+            Last = std::min(NodeCount - 1, GameState.Segment + Ahead);
+  RenderMountain(GameState, First, Last);
+  for (int Index = First; Index < Last; ++Index) {
+    ShadowEnabled = std::abs(Index - GameState.Segment) <= 2;
+    const int Zone = Game::GetSectionIndex(Index);
+    const uint16_t Grasses[] = {MakeColor(4, 6, 3), MakeColor(7, 7, 4), MakeColor(6, 6, 5),
+                                MakeColor(3, 6, 4)};
+    const uint16_t Gravels[] = {MakeColor(9, 9, 7), MakeColor(10, 9, 7), MakeColor(8, 8, 8),
+                                MakeColor(8, 8, 6)};
+    uint16_t Grass = Grasses[Zone], RoadColor = Gravels[Zone];
+    if (GameState.SelectedTrack == 1) {
+      Grass = MakeColor(14, 12, 8);
+      RoadColor = MakeColor(12, 10, 6);
     }
-    if (g.bridge(i))
-      roadcol = color(8, 7, 5);
-    if (g.selected_track == 2) {
-      grass = color(13, 14, 15);
-      roadcol = g.icy(i) ? color(7, 11, 13) : color(11, 12, 13);
+    if (GameState.Bridge(Index))
+      RoadColor = MakeColor(8, 7, 5);
+    if (GameState.SelectedTrack == 2) {
+      Grass = MakeColor(13, 14, 15);
+      RoadColor = GameState.Icy(Index) ? MakeColor(7, 11, 13) : MakeColor(11, 12, 13);
     }
-    if (g.tunnel(i))
-      roadcol = color(6, 7, 8);
-    const auto &a = g.terrain[i];
-    const auto &b = g.terrain[i + 1];
-    for (int side = 0; side < 2; ++side) {
-      const int far = side ? 9 : 0, bank = side ? 8 : 1, verge = side ? 7 : 2, edge = side ? 6 : 3;
+    if (GameState.Tunnel(Index))
+      RoadColor = MakeColor(6, 7, 8);
+    const auto &CurrentRing = GameState.Terrain[Index];
+    const auto &NextRing = GameState.Terrain[Index + 1];
+    for (int Side = 0; Side < 2; ++Side) {
+      const int Far = Side ? 9 : 0, Bank = Side ? 8 : 1, Verge = Side ? 7 : 2, Edge = Side ? 6 : 3;
       // Authored world positions are built once, avoiding repeated software
       // floating-point terrain sampling for every face on the RP2040.
-      const bool water = g.bridge(i) || (g.coast(i) && side == 1);
-      uint16_t outer = water ? color(3, 8, 11) : grass;
-      uint16_t bank_color = g.coast(i) && side == 1 ? color(14, 12, 8) : grass;
-      ground_triangle(a[far], b[far], b[bank], shade(outer, -1));
-      ground_triangle(a[far], b[bank], a[bank], outer);
-      ground_triangle(a[bank], b[bank], b[verge], shade(bank_color, i % 3 == 0 ? 1 : 0));
-      ground_triangle(a[bank], b[verge], a[verge], shade(bank_color, -1));
-      ground_quad(a[verge], b[verge], b[edge], a[edge], shade(grass, 1));
+      const bool Water = GameState.Bridge(Index) || (GameState.Coast(Index) && Side == 1);
+      uint16_t Outer = Water ? MakeColor(3, 8, 11) : Grass;
+      uint16_t BankColor = GameState.Coast(Index) && Side == 1 ? MakeColor(14, 12, 8) : Grass;
+      DrawGroundTriangle(CurrentRing[Far], NextRing[Far], NextRing[Bank], ShadeColor(Outer, -1));
+      DrawGroundTriangle(CurrentRing[Far], NextRing[Bank], CurrentRing[Bank], Outer);
+      DrawGroundTriangle(CurrentRing[Bank], NextRing[Bank], NextRing[Verge],
+                         ShadeColor(BankColor, Index % 3 == 0 ? 1 : 0));
+      DrawGroundTriangle(CurrentRing[Bank], NextRing[Verge], CurrentRing[Verge],
+                         ShadeColor(BankColor, -1));
+      DrawGroundQuadrilateral(CurrentRing[Verge], NextRing[Verge], NextRing[Edge],
+                              CurrentRing[Edge], ShadeColor(Grass, 1));
     }
     // Material strips partition the surface: no coplanar wheel-track overlays.
-    for (int strip = 3; strip < 6; ++strip)
-      ground_quad(a[strip], b[strip], b[strip + 1], a[strip + 1],
-                  shade(roadcol, strip == 4 ? -1 : 0));
-    render_scenery(g, i);
-    render_track_objects(g, i);
+    for (int Strip = 3; Strip < 6; ++Strip)
+      DrawGroundQuadrilateral(CurrentRing[Strip], NextRing[Strip], NextRing[Strip + 1],
+                              CurrentRing[Strip + 1], ShadeColor(RoadColor, Strip == 4 ? -1 : 0));
+    RenderScenery(GameState, Index);
+    RenderTrackObjects(GameState, Index);
   }
 }
-void Renderer::render_scenery(const Game &g, int i) {
-  const int zone = Game::section(i);
-  if (i % 3 == 0)
-    for (int sign : {-1, 1}) {
-      if (!g.has_scenery(i, sign))
+void Renderer::RenderScenery(const Game &GameState, int Index) {
+  const int Zone = Game::GetSectionIndex(Index);
+  if (Index % 3 == 0)
+    for (int Sign : {-1, 1}) {
+      if (!GameState.HasScenery(Index, Sign))
         continue;
-      Vec p = g.scenery(i, sign);
-      if (g.selected_track == 2 ||
-          (g.selected_track == 0 && (zone == 0 || zone == 3 || (zone == 1 && i % 12 == 0))) ||
-          (g.selected_track == 1 && i % 6 == 0)) {
-        const float height = 5.f + float((i * 7) % 4);
-        bool distant = false;
+      Vector3 Position = GameState.Scenery(Index, Sign);
+      if (GameState.SelectedTrack == 2 ||
+          (GameState.SelectedTrack == 0 &&
+           (Zone == 0 || Zone == 3 || (Zone == 1 && Index % 12 == 0))) ||
+          (GameState.SelectedTrack == 1 && Index % 6 == 0)) {
+        const float Height = 5.f + float((Index * 7) % 4);
+        bool Distant = false;
         {
-          const auto center = transform(p + Vec{0, height * .5f, 0});
-          const int radius = int(height * .75f * tuning::WorldScale);
+          const auto Center = Transform(Position + Vector3{0, Height * .5f, 0});
+          const int Radius = int(Height * .75f * Tuning::WorldScale);
           // Conservative sphere/plane rejection keeps complete silhouettes
           // while avoiding geometry work for trees outside the camera view.
-          if (center.z + radius < tuning::NearPlane || center.z - radius > tuning::FarPlane ||
-              std::abs(center.x) * tuning::FocalLength >
-                  center.z * tuning::CenterX + radius * 105 ||
-              center.y * tuning::FocalLength > center.z * projection_y + radius * 101 ||
-              -center.y * tuning::FocalLength > center.z * (H - projection_y) + radius * 109)
+          if (Center.CoordinateZ + Radius < Tuning::NearPlane ||
+              Center.CoordinateZ - Radius > Tuning::FarPlane ||
+              std::abs(Center.CoordinateX) * Tuning::FocalLength >
+                  Center.CoordinateZ * Tuning::CenterX + Radius * 105 ||
+              Center.CoordinateY * Tuning::FocalLength >
+                  Center.CoordinateZ * ProjectionY + Radius * 101 ||
+              -Center.CoordinateY * Tuning::FocalLength >
+                  Center.CoordinateZ * (FramebufferHeight - ProjectionY) + Radius * 109)
             continue;
           // Leave frame-time headroom around the mountain portal by simplifying
           // distant snow trees; road geometry and nearby tree detail are retained.
-          const float detail_distance = g.selected_track == 2 ? tuning::SnowSceneryDetailDistance
-                                                              : tuning::SceneryDetailDistance;
-          distant = center.z > detail_distance * tuning::WorldScale;
+          const float DetailDistance = GameState.SelectedTrack == 2
+                                           ? Tuning::SnowSceneryDetailDistance
+                                           : Tuning::SceneryDetailDistance;
+          Distant = Center.CoordinateZ > DetailDistance * Tuning::WorldScale;
         }
-        if (g.selected_track == 1)
-          palm_tree(p, height, i);
-        else if (distant)
-          distant_snow_tree(p, height, i, g.selected_track == 2);
+        if (GameState.SelectedTrack == 1)
+          DrawPalmTree(Position, Height, Index);
+        else if (Distant)
+          DrawDistantSnowTree(Position, Height, Index, GameState.SelectedTrack == 2);
         else
-          snow_tree(p, height, i);
-        if (g.selected_track == 2 && !distant) {
-          Vec top = p + Vec{0, 5.2f + float((i * 7) % 4), 0};
-          triangle(top, p + Vec{-1.2f, 3.8f, 0}, p + Vec{1.2f, 3.8f, 0}, color(14, 15, 15));
+          DrawSnowTree(Position, Height, Index);
+        if (GameState.SelectedTrack == 2 && !Distant) {
+          Vector3 Top = Position + Vector3{0, 5.2f + float((Index * 7) % 4), 0};
+          DrawTriangle(Top, Position + Vector3{-1.2f, 3.8f, 0}, Position + Vector3{1.2f, 3.8f, 0},
+                       MakeColor(14, 15, 15));
         }
       } else {
         // Replace trees with heather/rock outcrops on exposed sections.
-        float r = zone == 2 ? 1.4f : .8f, h = zone == 2 ? 2.f : .6f;
-        Vec a = p + Vec{-r, 0, -r}, b = p + Vec{r, 0, -r}, c = p + Vec{r, 0, r},
-            d = p + Vec{-r, 0, r};
-        Vec top = p + Vec{-.3f, h, .2f};
-        uint16_t rock = zone == 2 ? color(7, 8, 8) : color(6, 5, 5);
-        triangle(a, b, top, shade(rock, -2));
-        triangle(b, c, top, rock);
-        triangle(c, d, top, shade(rock, 1));
-        triangle(d, a, top, shade(rock, -1));
+        float RedComponent = Zone == 2 ? 1.4f : .8f, Height = Zone == 2 ? 2.f : .6f;
+        Vector3 FirstVertex = Position + Vector3{-RedComponent, 0, -RedComponent},
+                SecondVertex = Position + Vector3{RedComponent, 0, -RedComponent},
+                ThirdVertex = Position + Vector3{RedComponent, 0, RedComponent},
+                FourthVertex = Position + Vector3{-RedComponent, 0, RedComponent};
+        Vector3 Top = Position + Vector3{-.3f, Height, .2f};
+        uint16_t Rock = Zone == 2 ? MakeColor(7, 8, 8) : MakeColor(6, 5, 5);
+        DrawTriangle(FirstVertex, SecondVertex, Top, ShadeColor(Rock, -2));
+        DrawTriangle(SecondVertex, ThirdVertex, Top, Rock);
+        DrawTriangle(ThirdVertex, FourthVertex, Top, ShadeColor(Rock, 1));
+        DrawTriangle(FourthVertex, FirstVertex, Top, ShadeColor(Rock, -1));
       }
     }
 }
-void Renderer::render_track_objects(const Game &g, int i) {
-  auto at = [&](int j, float side, float rise = 0.f) {
-    return g.roadside(j, side) + Vec{0, rise, 0};
+void Renderer::RenderTrackObjects(const Game &GameState, int Index) {
+  auto CurrentIndex = [&](int OtherIndex, float Side, float Rise = 0.f) {
+    return GameState.Roadside(OtherIndex, Side) + Vector3{0, Rise, 0};
   };
-  if (g.bridge(i) || g.tunnel(i)) {
-    const bool tunnel = g.tunnel(i);
-    for (int sign : {-1, 1}) {
-      Vec a = at(i, sign * (g.road[i].half_width + tuning::RailMargin));
-      Vec b = at(i + 1, sign * (g.road[i + 1].half_width + tuning::RailMargin));
-      float wall_height = tunnel ? tuning::TunnelHeight : 1.f;
-      uint16_t wall = tunnel ? color(5, 6, 7) : color(8, 7, 5);
-      quad(a, b, b + Vec{0, wall_height, 0}, a + Vec{0, wall_height, 0}, wall);
-      if (!tunnel) {
-        box(a, {.25f, 1.25f, .25f}, g.road[i].heading, color(12, 11, 8));
-        quad(a, b, b + Vec{0, -1.2f, 0}, a + Vec{0, -1.2f, 0}, color(5, 5, 4));
-        if (i % 3 == 0)
-          box(a + Vec{0, -tuning::RiverDrop, 0}, {.7f, tuning::RiverDrop, .7f}, g.road[i].heading,
-              color(6, 6, 5));
+  if (GameState.Bridge(Index) || GameState.Tunnel(Index)) {
+    const bool Tunnel = GameState.Tunnel(Index);
+    for (int Sign : {-1, 1}) {
+      Vector3 FirstVertex =
+          CurrentIndex(Index, Sign * (GameState.Road[Index].HalfWidth + Tuning::RailMargin));
+      Vector3 SecondVertex = CurrentIndex(
+          Index + 1, Sign * (GameState.Road[Index + 1].HalfWidth + Tuning::RailMargin));
+      float WallHeight = Tunnel ? Tuning::TunnelHeight : 1.f;
+      uint16_t Wall = Tunnel ? MakeColor(5, 6, 7) : MakeColor(8, 7, 5);
+      DrawQuadrilateral(FirstVertex, SecondVertex, SecondVertex + Vector3{0, WallHeight, 0},
+                        FirstVertex + Vector3{0, WallHeight, 0}, Wall);
+      if (!Tunnel) {
+        DrawBox(FirstVertex, {.25f, 1.25f, .25f}, GameState.Road[Index].Heading,
+                MakeColor(12, 11, 8));
+        DrawQuadrilateral(FirstVertex, SecondVertex, SecondVertex + Vector3{0, -1.2f, 0},
+                          FirstVertex + Vector3{0, -1.2f, 0}, MakeColor(5, 5, 4));
+        if (Index % 3 == 0)
+          DrawBox(FirstVertex + Vector3{0, -Tuning::RiverDrop, 0}, {.7f, Tuning::RiverDrop, .7f},
+                  GameState.Road[Index].Heading, MakeColor(6, 6, 5));
       }
     }
-    if (tunnel) {
-      Vec a = at(i, -g.road[i].half_width - tuning::RailMargin, tuning::TunnelHeight);
-      Vec b = at(i, g.road[i].half_width + tuning::RailMargin, tuning::TunnelHeight);
-      Vec c = at(i + 1, g.road[i + 1].half_width + tuning::RailMargin, tuning::TunnelHeight);
-      Vec d = at(i + 1, -g.road[i + 1].half_width - tuning::RailMargin, tuning::TunnelHeight);
-      quad(a, b, c, d, color(4, 5, 6));
-      if (i % 3 == 0) {
-        Vec lamp = at(i, 0, tuning::TunnelHeight - .12f);
-        box(lamp, {1.2f, .06f, .5f}, g.road[i].heading, color(15, 14, 9));
+    if (Tunnel) {
+      Vector3 FirstVertex = CurrentIndex(
+          Index, -GameState.Road[Index].HalfWidth - Tuning::RailMargin, Tuning::TunnelHeight);
+      Vector3 SecondVertex = CurrentIndex(
+          Index, GameState.Road[Index].HalfWidth + Tuning::RailMargin, Tuning::TunnelHeight);
+      Vector3 ThirdVertex =
+          CurrentIndex(Index + 1, GameState.Road[Index + 1].HalfWidth + Tuning::RailMargin,
+                       Tuning::TunnelHeight);
+      Vector3 FourthVertex =
+          CurrentIndex(Index + 1, -GameState.Road[Index + 1].HalfWidth - Tuning::RailMargin,
+                       Tuning::TunnelHeight);
+      DrawQuadrilateral(FirstVertex, SecondVertex, ThirdVertex, FourthVertex, MakeColor(4, 5, 6));
+      if (Index % 3 == 0) {
+        Vector3 Lamp = CurrentIndex(Index, 0, Tuning::TunnelHeight - .12f);
+        DrawBox(Lamp, {1.2f, .06f, .5f}, GameState.Road[Index].Heading, MakeColor(15, 14, 9));
       }
     }
   }
   // Sector gates make the timing lines visible before reaching them.
-  if (std::find(SectorEnds.begin(), SectorEnds.end(), i) != SectorEnds.end()) {
-    for (int sign : {-1, 1}) {
-      Vec p = at(i, sign * (g.road[i].half_width + .55f));
-      box(p, {.24f, 3.2f, .24f}, g.road[i].heading, color(14, 12, 3));
-      Vec right = g.road[i].right * .8f;
-      quad(p + Vec{0, 3.2f, 0}, p + right + Vec{0, 3.2f, 0}, p + right + Vec{0, 2.1f, 0},
-           p + Vec{0, 2.1f, 0}, color(3, 4, 10));
+  if (std::find(SectorEnds.begin(), SectorEnds.end(), Index) != SectorEnds.end()) {
+    for (int Sign : {-1, 1}) {
+      Vector3 Position = CurrentIndex(Index, Sign * (GameState.Road[Index].HalfWidth + .55f));
+      DrawBox(Position, {.24f, 3.2f, .24f}, GameState.Road[Index].Heading, MakeColor(14, 12, 3));
+      Vector3 Right = GameState.Road[Index].Right * .8f;
+      DrawQuadrilateral(Position + Vector3{0, 3.2f, 0}, Position + Right + Vector3{0, 3.2f, 0},
+                        Position + Right + Vector3{0, 2.1f, 0}, Position + Vector3{0, 2.1f, 0},
+                        MakeColor(3, 4, 10));
     }
   }
-  if (i % 6 == 0)
-    for (int sign : {-1, 1}) {
-      Vec p = at(i, sign * (g.road[i].half_width + .6f));
-      const auto marker = transform(p + Vec{0, .45f, 0});
-      if (marker.z < -64 || std::abs(marker.x) > marker.z + 128)
+  if (Index % 6 == 0)
+    for (int Sign : {-1, 1}) {
+      Vector3 Position = CurrentIndex(Index, Sign * (GameState.Road[Index].HalfWidth + .6f));
+      const auto Marker = Transform(Position + Vector3{0, .45f, 0});
+      if (Marker.CoordinateZ < -64 || std::abs(Marker.CoordinateX) > Marker.CoordinateZ + 128)
         continue;
-      box(p, {.16f, .85f, .16f}, 0, color(13, 13, 11));
-      box(p + Vec{0, .6f, 0}, {.2f, .24f, .2f}, 0, color(12, 3, 2));
+      DrawBox(Position, {.16f, .85f, .16f}, 0, MakeColor(13, 13, 11));
+      DrawBox(Position + Vector3{0, .6f, 0}, {.2f, .24f, .2f}, 0, MakeColor(12, 3, 2));
     }
-  if (i == NodeCount - 4 || i == 2) {
-    Vec p = at(i, 0, .035f);
-    for (int k = 0; k < 10; ++k) {
-      float width = g.road[i].half_width;
-      float l = -width + k * width / 5, r = l + width / 5;
-      Vec a = at(i, l, .035f), b = at(i, r, .035f);
-      Vec d = {std::sin(g.road[i].heading) * .7f, 0, std::cos(g.road[i].heading) * .7f};
-      quad(a, b, b + d, a + d, k % 2 ? color(2, 3, 3) : color(14, 14, 12));
+  if (Index == NodeCount - 4 || Index == 2) {
+    Vector3 Position = CurrentIndex(Index, 0, .035f);
+    for (int SampleIndex = 0; SampleIndex < 10; ++SampleIndex) {
+      float Width = GameState.Road[Index].HalfWidth;
+      float LeftValue = -Width + SampleIndex * Width / 5, RedComponent = LeftValue + Width / 5;
+      Vector3 FirstVertex = CurrentIndex(Index, LeftValue, .035f),
+              SecondVertex = CurrentIndex(Index, RedComponent, .035f);
+      Vector3 FourthVertex = {std::sin(GameState.Road[Index].Heading) * .7f, 0,
+                              std::cos(GameState.Road[Index].Heading) * .7f};
+      DrawQuadrilateral(FirstVertex, SecondVertex, SecondVertex + FourthVertex,
+                        FirstVertex + FourthVertex,
+                        SampleIndex % 2 ? MakeColor(2, 3, 3) : MakeColor(14, 14, 12));
     }
-    (void)p;
+    (void)Position;
   }
 }
-void Renderer::render_car(const Game &g) {
-  const bool showroom = g.mode == Mode::CarSelect;
-  const float car_sin = shadow_sin, car_cos = shadow_cos;
-  const float ps = std::sin(showroom ? 0 : g.pitch), pc = std::cos(showroom ? 0 : g.pitch),
-              rs = std::sin(showroom ? 0 : g.roll), rc = std::cos(showroom ? 0 : g.roll);
-  auto carpoint = [&](float x, float y, float z) {
-    x *= g.spec().width;
-    y *= g.spec().height;
-    z *= g.spec().length;
-    float ry = y * rc + x * rs, rx = x * rc - y * rs;
-    float py = ry * pc + z * ps, pz = z * pc - ry * ps;
-    return g.car + Vec{rx * car_cos + pz * car_sin, py, pz * car_cos - rx * car_sin};
+void Renderer::RenderCar(const Game &GameState) {
+  const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
+  const float CarSine = ShadowSine, CarCosine = ShadowCosine;
+  const float PitchSine = std::sin(Showroom ? 0 : GameState.Pitch),
+              PitchCosine = std::cos(Showroom ? 0 : GameState.Pitch),
+              RoadSine = std::sin(Showroom ? 0 : GameState.Roll),
+              RoadCosine = std::cos(Showroom ? 0 : GameState.Roll);
+  auto TransformCarPoint = [&](float CoordinateX, float CoordinateY, float CoordinateZ) {
+    CoordinateX *= GameState.GetCarSpecification().Width;
+    CoordinateY *= GameState.GetCarSpecification().Height;
+    CoordinateZ *= GameState.GetCarSpecification().Length;
+    float RelativeY = CoordinateY * RoadCosine + CoordinateX * RoadSine,
+          RelativeX = CoordinateX * RoadCosine - CoordinateY * RoadSine;
+    float PositionY = RelativeY * PitchCosine + CoordinateZ * PitchSine,
+          PositionZ = CoordinateZ * PitchCosine - RelativeY * PitchSine;
+    return GameState.CarPosition + Vector3{RelativeX * CarCosine + PositionZ * CarSine, PositionY,
+                                           PositionZ * CarCosine - RelativeX * CarSine};
   };
-  auto panel = [&](Vec a, Vec b, Vec c, Vec d, uint16_t col) {
-    quad(carpoint(a.x, a.y, a.z), carpoint(b.x, b.y, b.z), carpoint(c.x, c.y, c.z),
-         carpoint(d.x, d.y, d.z), col);
+  auto Panel = [&](Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex,
+                   Vector3 FourthVertex, uint16_t SurfaceColor) {
+    DrawQuadrilateral(TransformCarPoint(FirstVertex.CoordinateX, FirstVertex.CoordinateY,
+                                        FirstVertex.CoordinateZ),
+                      TransformCarPoint(SecondVertex.CoordinateX, SecondVertex.CoordinateY,
+                                        SecondVertex.CoordinateZ),
+                      TransformCarPoint(ThirdVertex.CoordinateX, ThirdVertex.CoordinateY,
+                                        ThirdVertex.CoordinateZ),
+                      TransformCarPoint(FourthVertex.CoordinateX, FourthVertex.CoordinateY,
+                                        FourthVertex.CoordinateZ),
+                      SurfaceColor);
   };
-  auto carbox = [&](Vec p, Vec size, uint16_t col) {
-    Vec v[8];
-    for (int i = 0; i < 8; ++i)
-      v[i] = carpoint(p.x + (i & 1 ? 1 : -1) * size.x * .5f, p.y + ((i & 4) ? size.y : 0),
-                      p.z + (i & 2 ? 1 : -1) * size.z * .5f);
-    Vec relative = camera - g.car;
-    float x = relative.x * car_cos - relative.z * car_sin,
-          z = relative.x * car_sin + relative.z * car_cos;
-    if (z < p.z)
-      quad(v[0], v[1], v[5], v[4], shade(col, -1));
+  auto DrawCarBox = [&](Vector3 Position, Vector3 Size, uint16_t SurfaceColor) {
+    Vector3 Vertex[8];
+    for (int Index = 0; Index < 8; ++Index)
+      Vertex[Index] =
+          TransformCarPoint(Position.CoordinateX + (Index & 1 ? 1 : -1) * Size.CoordinateX * .5f,
+                            Position.CoordinateY + ((Index & 4) ? Size.CoordinateY : 0),
+                            Position.CoordinateZ + (Index & 2 ? 1 : -1) * Size.CoordinateZ * .5f);
+    Vector3 Relative = Camera - GameState.CarPosition;
+    float CoordinateX = Relative.CoordinateX * CarCosine - Relative.CoordinateZ * CarSine,
+          CoordinateZ = Relative.CoordinateX * CarSine + Relative.CoordinateZ * CarCosine;
+    if (CoordinateZ < Position.CoordinateZ)
+      DrawQuadrilateral(Vertex[0], Vertex[1], Vertex[5], Vertex[4], ShadeColor(SurfaceColor, -1));
     else
-      quad(v[2], v[3], v[7], v[6], col);
-    if (x < p.x)
-      quad(v[0], v[2], v[6], v[4], shade(col, -1));
+      DrawQuadrilateral(Vertex[2], Vertex[3], Vertex[7], Vertex[6], SurfaceColor);
+    if (CoordinateX < Position.CoordinateX)
+      DrawQuadrilateral(Vertex[0], Vertex[2], Vertex[6], Vertex[4], ShadeColor(SurfaceColor, -1));
     else
-      quad(v[1], v[3], v[7], v[5], col);
-    quad(v[4], v[5], v[7], v[6], shade(col, 1));
+      DrawQuadrilateral(Vertex[1], Vertex[3], Vertex[7], Vertex[5], SurfaceColor);
+    DrawQuadrilateral(Vertex[4], Vertex[5], Vertex[7], Vertex[6], ShadeColor(SurfaceColor, 1));
   };
-  for (float x : {-.91f, .91f})
-    for (float z : {-1.05f, 1.05f})
-      carbox({x, .1f, z}, {.32f, .58f, .72f}, color(2, 2, 2));
-  const uint16_t blue = g.selected_car == 0   ? color(14, 5, 3)
-                        : g.selected_car == 1 ? color(2, 4, 12)
-                                              : color(14, 13, 10);
-  const uint16_t gold = g.selected_car == 0   ? color(15, 12, 8)
-                        : g.selected_car == 1 ? color(15, 13, 3)
-                                              : color(12, 3, 3),
-                 glass = color(3, 5, 6);
+  for (float CoordinateX : {-.91f, .91f})
+    for (float CoordinateZ : {-1.05f, 1.05f})
+      DrawCarBox({CoordinateX, .1f, CoordinateZ}, {.32f, .58f, .72f}, MakeColor(2, 2, 2));
+  const uint16_t Blue = GameState.SelectedCar == 0   ? MakeColor(14, 5, 3)
+                        : GameState.SelectedCar == 1 ? MakeColor(2, 4, 12)
+                                                     : MakeColor(14, 13, 10);
+  const uint16_t Gold = GameState.SelectedCar == 0   ? MakeColor(15, 12, 8)
+                        : GameState.SelectedCar == 1 ? MakeColor(15, 13, 3)
+                                                     : MakeColor(12, 3, 3),
+                 Glass = MakeColor(3, 5, 6);
   // A watertight painted shell: roof, glazing and stripes ARE the faces.
   // There is no underlying cabin box to fight their depth values.
-  for (int sign : {-1, 1}) {
-    float x = sign * .89f;
-    panel({x, .36f, -1.62f}, {x, .36f, 1.62f}, {x, .57f, 1.62f}, {x, .57f, -1.62f},
-          shade(blue, -2));
-    panel({x, .57f, -1.62f}, {x, .57f, 1.62f}, {x, .78f, 1.62f}, {x, .78f, -1.62f}, gold);
-    panel({x, .78f, -1.62f}, {x, .78f, 1.62f}, {x, .97f, 1.52f}, {x, .97f, -1.52f}, blue);
-    float xb = sign * .82f, xt = sign * .62f;
-    panel({xb, .97f, -1.12f}, {xb, .97f, -.32f}, {xt, 1.55f, -.24f}, {xt, 1.55f, -.70f},
-          shade(glass, -1));
-    panel({xb, .97f, -.32f}, {xb, .97f, -.20f}, {xt, 1.55f, -.12f}, {xt, 1.55f, -.24f}, blue);
-    panel({xb, .97f, -.20f}, {xb, .97f, .92f}, {xt, 1.55f, .32f}, {xt, 1.55f, -.12f}, glass);
-    panel({x, .97f, -1.52f}, {x, .97f, 1.52f}, {xb, .97f, .92f}, {xb, .97f, -1.12f}, blue);
+  for (int Sign : {-1, 1}) {
+    float CoordinateX = Sign * .89f;
+    Panel({CoordinateX, .36f, -1.62f}, {CoordinateX, .36f, 1.62f}, {CoordinateX, .57f, 1.62f},
+          {CoordinateX, .57f, -1.62f}, ShadeColor(Blue, -2));
+    Panel({CoordinateX, .57f, -1.62f}, {CoordinateX, .57f, 1.62f}, {CoordinateX, .78f, 1.62f},
+          {CoordinateX, .78f, -1.62f}, Gold);
+    Panel({CoordinateX, .78f, -1.62f}, {CoordinateX, .78f, 1.62f}, {CoordinateX, .97f, 1.52f},
+          {CoordinateX, .97f, -1.52f}, Blue);
+    float BottomX = Sign * .82f, TopX = Sign * .62f;
+    Panel({BottomX, .97f, -1.12f}, {BottomX, .97f, -.32f}, {TopX, 1.55f, -.24f},
+          {TopX, 1.55f, -.70f}, ShadeColor(Glass, -1));
+    Panel({BottomX, .97f, -.32f}, {BottomX, .97f, -.20f}, {TopX, 1.55f, -.12f},
+          {TopX, 1.55f, -.24f}, Blue);
+    Panel({BottomX, .97f, -.20f}, {BottomX, .97f, .92f}, {TopX, 1.55f, .32f}, {TopX, 1.55f, -.12f},
+          Glass);
+    Panel({CoordinateX, .97f, -1.52f}, {CoordinateX, .97f, 1.52f}, {BottomX, .97f, .92f},
+          {BottomX, .97f, -1.12f}, Blue);
   }
-  panel({-.62f, 1.55f, -.70f}, {.62f, 1.55f, -.70f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
-        gold);
-  panel({-.82f, .97f, -1.12f}, {.82f, .97f, -1.12f}, {.62f, 1.55f, -.70f}, {-.62f, 1.55f, -.70f},
-        shade(glass, -1));
-  panel({-.82f, .97f, .92f}, {.82f, .97f, .92f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
-        shade(glass, 1));
-  panel({-.89f, .97f, -1.52f}, {.89f, .97f, -1.52f}, {.82f, .97f, -1.12f}, {-.82f, .97f, -1.12f},
-        blue);
-  panel({-.89f, .97f, 1.52f}, {.89f, .97f, 1.52f}, {.82f, .97f, .92f}, {-.82f, .97f, .92f}, blue);
-  for (int sign : {-1, 1}) {
-    float z = sign * 1.62f, zt = sign * 1.52f;
-    panel({-.89f, .36f, z}, {.89f, .36f, z}, {.89f, .52f, z}, {-.89f, .52f, z}, color(2, 3, 4));
-    panel({-.89f, .52f, z}, {.89f, .52f, z}, {.89f, .73f, z}, {-.89f, .73f, z}, shade(blue, -1));
-    const float cuts[] = {-.89f, -.44f, .44f, .89f};
-    for (int k = 0; k < 3; ++k)
-      panel({cuts[k], .73f, z}, {cuts[k + 1], .73f, z}, {cuts[k + 1], .97f, zt},
-            {cuts[k], .97f, zt}, k == 1 ? blue : (sign < 0 ? color(14, 3, 2) : color(15, 15, 11)));
+  Panel({-.62f, 1.55f, -.70f}, {.62f, 1.55f, -.70f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
+        Gold);
+  Panel({-.82f, .97f, -1.12f}, {.82f, .97f, -1.12f}, {.62f, 1.55f, -.70f}, {-.62f, 1.55f, -.70f},
+        ShadeColor(Glass, -1));
+  Panel({-.82f, .97f, .92f}, {.82f, .97f, .92f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
+        ShadeColor(Glass, 1));
+  Panel({-.89f, .97f, -1.52f}, {.89f, .97f, -1.52f}, {.82f, .97f, -1.12f}, {-.82f, .97f, -1.12f},
+        Blue);
+  Panel({-.89f, .97f, 1.52f}, {.89f, .97f, 1.52f}, {.82f, .97f, .92f}, {-.82f, .97f, .92f}, Blue);
+  for (int Sign : {-1, 1}) {
+    float CoordinateZ = Sign * 1.62f, TopDepth = Sign * 1.52f;
+    Panel({-.89f, .36f, CoordinateZ}, {.89f, .36f, CoordinateZ}, {.89f, .52f, CoordinateZ},
+          {-.89f, .52f, CoordinateZ}, MakeColor(2, 3, 4));
+    Panel({-.89f, .52f, CoordinateZ}, {.89f, .52f, CoordinateZ}, {.89f, .73f, CoordinateZ},
+          {-.89f, .73f, CoordinateZ}, ShadeColor(Blue, -1));
+    const float Cuts[] = {-.89f, -.44f, .44f, .89f};
+    for (int SampleIndex = 0; SampleIndex < 3; ++SampleIndex)
+      Panel({Cuts[SampleIndex], .73f, CoordinateZ}, {Cuts[SampleIndex + 1], .73f, CoordinateZ},
+            {Cuts[SampleIndex + 1], .97f, TopDepth}, {Cuts[SampleIndex], .97f, TopDepth},
+            SampleIndex == 1 ? Blue : (Sign < 0 ? MakeColor(14, 3, 2) : MakeColor(15, 15, 11)));
   }
-  if (g.selected_car != 0)
-    carbox({0, 1.04f, -1.38f}, {1.86f, .12f, .32f}, shade(blue, -1));
+  if (GameState.SelectedCar != 0)
+    DrawCarBox({0, 1.04f, -1.38f}, {1.86f, .12f, .32f}, ShadeColor(Blue, -1));
 }
-void Renderer::render_ui(const Game &g, int fps, bool diagnostics) {
-  const uint16_t white = color(15, 15, 13), yellow = color(15, 13, 3), dark = color(1, 2, 2);
-  char buffer[40];
-  const char *confirm = g.controls == Controls::Pico       ? "A"
-                        : g.controls == Controls::Keyboard ? "ENTER"
-                        : g.controls == Controls::Gamepad  ? "A"
-                                                           : "GO";
-  const char *back = g.controls == Controls::Pico       ? "B"
-                     : g.controls == Controls::Keyboard ? "ESC"
-                     : g.controls == Controls::Gamepad  ? "B"
-                                                        : "BACK";
-  const char *pause = g.controls == Controls::Pico       ? "Y"
-                      : g.controls == Controls::Keyboard ? "P"
-                      : g.controls == Controls::Gamepad  ? "START"
-                                                         : "PAUSE";
-  const char *aux = g.controls == Controls::Keyboard ? "SPACE"
-                    : g.controls == Controls::Touch  ? "TAP"
-                                                     : "X";
-  const char *audio = g.controls == Controls::Keyboard ? "M"
-                      : g.controls == Controls::Touch  ? "TAP"
-                                                       : "X";
-  if (g.mode == Mode::Title) {
-    rect(0, 0, W, 25, dark);
-    centered(8, "GRAVELBYTE", white, 2);
-    std::snprintf(buffer, sizeof(buffer), "PRESS %s TO CONTINUE", confirm);
-    centered(99, buffer, white);
-    std::snprintf(buffer, sizeof(buffer), "%s SOUND %s", audio, g.muted ? "OFF" : "ON");
-    centered(111, buffer, yellow);
+void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool Diagnostics) {
+  const uint16_t White = MakeColor(15, 15, 13), Yellow = MakeColor(15, 13, 3),
+                 Dark = MakeColor(1, 2, 2);
+  char Buffer[40];
+  const char *Confirm = GameState.ControlScheme == Controls::Pico       ? "A"
+                        : GameState.ControlScheme == Controls::Keyboard ? "ENTER"
+                        : GameState.ControlScheme == Controls::Gamepad  ? "A"
+                                                                        : "GO";
+  const char *Back = GameState.ControlScheme == Controls::Pico       ? "B"
+                     : GameState.ControlScheme == Controls::Keyboard ? "ESC"
+                     : GameState.ControlScheme == Controls::Gamepad  ? "B"
+                                                                     : "BACK";
+  const char *Pause = GameState.ControlScheme == Controls::Pico       ? "Y"
+                      : GameState.ControlScheme == Controls::Keyboard ? "P"
+                      : GameState.ControlScheme == Controls::Gamepad  ? "START"
+                                                                      : "PAUSE";
+  const char *AuxiliaryLabel = GameState.ControlScheme == Controls::Keyboard ? "SPACE"
+                               : GameState.ControlScheme == Controls::Touch  ? "TAP"
+                                                                             : "X";
+  const char *Audio = GameState.ControlScheme == Controls::Keyboard ? "M"
+                      : GameState.ControlScheme == Controls::Touch  ? "TAP"
+                                                                    : "X";
+  if (GameState.CurrentMode == GameMode::Title) {
+    DrawRectangle(0, 0, FramebufferWidth, 25, Dark);
+    DrawCenteredText(8, "GRAVELBYTE", White, 2);
+    std::snprintf(Buffer, sizeof(Buffer), "PRESS %s TO CONTINUE", Confirm);
+    DrawCenteredText(99, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s SOUND %s", Audio, GameState.Muted ? "OFF" : "ON");
+    DrawCenteredText(111, Buffer, Yellow);
     return;
   }
-  if (g.mode == Mode::Finished) {
-    if (g.show_records) {
-      rect(2, 7, 116, 94, dark);
-      centered(12, "STAGE COMPLETE", yellow);
-      time_text(buffer, sizeof(buffer), g.elapsed);
-      centered(23, buffer, white, 2);
-      centered(38, "GATE TARGET  BEST", yellow);
-      for (int i = 0; i < SectorCount; ++i) {
-        if (g.prior_splits[i] > 0)
-          std::snprintf(buffer, sizeof(buffer), "%d %+.2f %+.2f", i + 1,
-                        g.splits[i] - g.default_splits()[i], g.splits[i] - g.prior_splits[i]);
+  if (GameState.CurrentMode == GameMode::Finished) {
+    if (GameState.ShowRecords) {
+      DrawRectangle(2, 7, 116, 94, Dark);
+      DrawCenteredText(12, "STAGE COMPLETE", Yellow);
+      TimeText(Buffer, sizeof(Buffer), GameState.Elapsed);
+      DrawCenteredText(23, Buffer, White, 2);
+      DrawCenteredText(38, "GATE TARGET  BEST", Yellow);
+      for (int Index = 0; Index < SectorCount; ++Index) {
+        if (GameState.PriorSplits[Index] > 0)
+          std::snprintf(Buffer, sizeof(Buffer), "%d %+.2f %+.2f", Index + 1,
+                        GameState.Splits[Index] - GameState.GetDefaultSplits()[Index],
+                        GameState.Splits[Index] - GameState.PriorSplits[Index]);
         else
-          std::snprintf(buffer, sizeof(buffer), "%d %+.2f  --", i + 1,
-                        g.splits[i] - g.default_splits()[i]);
-        centered(48 + i * 9, buffer,
-                 g.splits[i] < g.default_splits()[i] ? color(6, 15, 7) : color(15, 6, 4));
+          std::snprintf(Buffer, sizeof(Buffer), "%d %+.2f  --", Index + 1,
+                        GameState.Splits[Index] - GameState.GetDefaultSplits()[Index]);
+        DrawCenteredText(48 + Index * 9, Buffer,
+                         GameState.Splits[Index] < GameState.GetDefaultSplits()[Index]
+                             ? MakeColor(6, 15, 7)
+                             : MakeColor(15, 6, 4));
       }
-      centered(94, "SECONDS / CUMULATIVE", white);
+      DrawCenteredText(94, "SECONDS / CUMULATIVE", White);
     }
-    std::snprintf(buffer, sizeof(buffer), "%s RECORDS", aux);
-    centered(104, buffer, yellow);
-    std::snprintf(buffer, sizeof(buffer), "%s RETRY  %s SELECT", confirm, back);
-    centered(113, buffer, white);
+    std::snprintf(Buffer, sizeof(Buffer), "%s RECORDS", AuxiliaryLabel);
+    DrawCenteredText(104, Buffer, Yellow);
+    std::snprintf(Buffer, sizeof(Buffer), "%s RETRY  %s SELECT", Confirm, Back);
+    DrawCenteredText(113, Buffer, White);
     return;
   }
-  if (g.mode == Mode::CarSelect) {
-    centered(6, g.spec().name, white, 2);
-    centered(21, g.spec().difficulty, yellow);
-    text(5, 52, "<", white, 2);
-    text(107, 52, ">", white, 2);
-    const char *labels[] = {"SPEED", "ACCEL", "DRIFT"};
-    const int values[] = {g.spec().speed_stat, g.spec().accel_stat, g.spec().drift_stat};
-    for (int row = 0; row < 3; ++row) {
-      text(15, tuning::StatsTop + row * tuning::StatsRow, labels[row], white);
-      for (int k = 0; k < tuning::StatBars; ++k)
-        rect(53 + k * 10, tuning::StatsTop + row * tuning::StatsRow, 8, 4,
-             k < values[row] ? yellow : color(4, 5, 5));
+  if (GameState.CurrentMode == GameMode::CarSelect) {
+    DrawCenteredText(6, GameState.GetCarSpecification().Name, White,
+                     std::strlen(GameState.GetCarSpecification().Name) <= 14 ? 2 : 1);
+    DrawCenteredText(21, GameState.GetCarSpecification().Difficulty, Yellow);
+    DrawText(5, 52, "<", White, 2);
+    DrawText(107, 52, ">", White, 2);
+    const char *Labels[] = {"SPEED", "ACCEL", "DRIFT"};
+    const int Values[] = {GameState.GetCarSpecification().SpeedStatistic,
+                          GameState.GetCarSpecification().AccelerationStatistic,
+                          GameState.GetCarSpecification().DriftStatistic};
+    for (int Row = 0; Row < 3; ++Row) {
+      DrawText(15, Tuning::StatisticsTop + Row * Tuning::StatisticsRowHeight, Labels[Row], White);
+      for (int SampleIndex = 0; SampleIndex < Tuning::StatisticBarCount; ++SampleIndex)
+        DrawRectangle(53 + SampleIndex * 10,
+                      Tuning::StatisticsTop + Row * Tuning::StatisticsRowHeight, 8, 4,
+                      SampleIndex < Values[Row] ? Yellow : MakeColor(4, 5, 5));
     }
-    std::snprintf(buffer, sizeof(buffer), "%s NEXT  %s BACK", confirm, back);
-    centered(112, buffer, white);
+    std::snprintf(Buffer, sizeof(Buffer), "%s NEXT  %s BACK", Confirm, Back);
+    DrawCenteredText(112, Buffer, White);
     return;
   }
-  if (g.mode == Mode::TrackSelect) {
-    rect(2, 3, 116, 24, dark);
-    centered(8, TrackNames[g.selected_track], white);
-    centered(19,
-             g.selected_track == 0   ? "FOREST GRAVEL"
-             : g.selected_track == 1 ? "DRY GRAVEL"
-                                     : "SNOW AND ICE",
-             yellow);
-    text(5, 52, "<", white, 2);
-    text(107, 52, ">", white, 2);
-    rect(4, 88, 112, 29, dark);
-    time_text(buffer, sizeof(buffer), g.default_splits().back());
-    char line[40];
-    std::snprintf(line, sizeof(line), "TO BEAT %s", buffer);
-    if (g.unlocked(g.selected_track))
-      centered(92, line, yellow);
-    if (!g.unlocked(g.selected_track)) {
-      std::snprintf(line, sizeof(line), "BEAT %s", TrackNames[g.selected_track - 1]);
-      centered(92, "LOCKED", yellow);
-      centered(101, line, white);
+  if (GameState.CurrentMode == GameMode::TrackSelect) {
+    DrawRectangle(2, 3, 116, 24, Dark);
+    DrawCenteredText(8, TrackNames[GameState.SelectedTrack], White);
+    DrawCenteredText(19,
+                     GameState.SelectedTrack == 0   ? "FOREST GRAVEL"
+                     : GameState.SelectedTrack == 1 ? "DRY GRAVEL"
+                                                    : "SNOW AND ICE",
+                     Yellow);
+    DrawText(5, 52, "<", White, 2);
+    DrawText(107, 52, ">", White, 2);
+    DrawRectangle(4, 88, 112, 29, Dark);
+    TimeText(Buffer, sizeof(Buffer), GameState.GetDefaultSplits().back());
+    char Line[40];
+    std::snprintf(Line, sizeof(Line), "TO BEAT %s", Buffer);
+    if (GameState.Unlocked(GameState.SelectedTrack))
+      DrawCenteredText(92, Line, Yellow);
+    if (!GameState.Unlocked(GameState.SelectedTrack)) {
+      std::snprintf(Line, sizeof(Line), "BEAT %s", TrackNames[GameState.SelectedTrack - 1]);
+      DrawCenteredText(92, "LOCKED", Yellow);
+      DrawCenteredText(101, Line, White);
     } else
-      centered(101, "1.8 KM  FIVE SPLITS", white);
-    std::snprintf(buffer, sizeof(buffer),
-                  g.unlocked(g.selected_track) ? "%s RACE  %s BACK" : "%s LOCKED  %s BACK", confirm,
-                  back);
-    centered(110, buffer, white);
+      DrawCenteredText(101, "1.8 KM  FIVE SPLITS", White);
+    std::snprintf(Buffer, sizeof(Buffer),
+                  GameState.Unlocked(GameState.SelectedTrack) ? "%s RACE  %s BACK"
+                                                              : "%s LOCKED  %s BACK",
+                  Confirm, Back);
+    DrawCenteredText(110, Buffer, White);
     return;
   }
-  rect(2, 2, 36, 9, dark);
-  time_text(buffer, sizeof(buffer), g.elapsed);
-  text(4, 4, buffer, white);
-  rect(77, 2, 41, 17, dark);
-  text(79, 4, "TO BEAT", yellow);
-  time_text(buffer, sizeof(buffer), g.reference_splits.back());
-  text(79, 12, buffer, white);
-  rect(2, 22, 4 * int(std::strlen(g.section_name(g.segment))) + 4, 9, dark);
-  text(4, 24, g.section_name(g.segment), white);
-  std::snprintf(buffer, sizeof(buffer), "%d", std::min(SectorCount, g.split_count + 1));
-  rect(2, 105, 7, 9, dark);
-  text(4, 107, buffer, yellow);
-  if (g.split_message > 0 && g.mode == Mode::Racing) {
-    std::snprintf(buffer, sizeof(buffer), "%+.2fs", g.split_delta);
-    centered(34, buffer, g.split_delta <= 0 ? color(6, 15, 7) : color(15, 6, 4));
+  DrawRectangle(2, 2, 36, 9, Dark);
+  TimeText(Buffer, sizeof(Buffer), GameState.Elapsed);
+  DrawText(4, 4, Buffer, White);
+  DrawRectangle(77, 2, 41, 17, Dark);
+  DrawText(79, 4, "TO BEAT", Yellow);
+  TimeText(Buffer, sizeof(Buffer), GameState.ReferenceSplits.back());
+  DrawText(79, 12, Buffer, White);
+  DrawRectangle(2, 22, 4 * int(std::strlen(GameState.GetSectionName(GameState.Segment))) + 4, 9,
+                Dark);
+  DrawText(4, 24, GameState.GetSectionName(GameState.Segment), White);
+  if (GameState.SplitMessage > 0 && GameState.CurrentMode == GameMode::Racing) {
+    std::snprintf(Buffer, sizeof(Buffer), "%+.2fs", GameState.SplitDelta);
+    DrawCenteredText(34, Buffer,
+                     GameState.SplitDelta <= 0 ? MakeColor(6, 15, 7) : MakeColor(15, 6, 4));
   }
   // Pick the strongest curve in the next 90m, giving useful notice at racing speed.
-  float upcoming = 0;
-  int distance = 0;
-  for (int i = g.segment + 3; i < std::min(NodeCount, g.segment + 16); ++i)
-    if (std::abs(g.road[i].turn) > std::abs(upcoming)) {
-      upcoming = g.road[i].turn;
-      distance = (i - g.segment) * int(Step);
+  float Upcoming = 0;
+  int Distance = 0;
+  for (int Index = GameState.Segment + 3; Index < std::min(NodeCount, GameState.Segment + 16);
+       ++Index)
+    if (std::abs(GameState.Road[Index].Turn) > std::abs(Upcoming)) {
+      Upcoming = GameState.Road[Index].Turn;
+      Distance = (Index - GameState.Segment) * int(TrackSegmentLength);
     }
-  rect(49, 2, 22, 18, dark);
-  const int sign = upcoming < 0 ? -1 : 1;
-  if (std::abs(upcoming) < .007f) {
-    rect(59, 5, 2, 8, yellow);
-    rect(57, 5, 6, 2, yellow);
-    rect(58, 4, 4, 1, yellow);
+  DrawRectangle(49, 2, 22, 18, Dark);
+  const int Sign = Upcoming < 0 ? -1 : 1;
+  if (std::abs(Upcoming) < .007f) {
+    DrawRectangle(59, 5, 2, 8, Yellow);
+    DrawRectangle(57, 5, 6, 2, Yellow);
+    DrawRectangle(58, 4, 4, 1, Yellow);
   } else {
-    rect(59, 7, 2, 6, yellow);
-    rect(sign > 0 ? 59 : 54, 6, 7, 2, yellow);
-    rect(sign > 0 ? 64 : 54, 4, 2, 6, yellow);
-    rect(sign > 0 ? 66 : 52, 5, 1, 4, yellow);
+    DrawRectangle(59, 7, 2, 6, Yellow);
+    DrawRectangle(Sign > 0 ? 59 : 54, 6, 7, 2, Yellow);
+    DrawRectangle(Sign > 0 ? 64 : 54, 4, 2, 6, Yellow);
+    DrawRectangle(Sign > 0 ? 66 : 52, 5, 1, 4, Yellow);
   }
-  std::snprintf(buffer, sizeof(buffer), "%d", distance);
-  centered(14, buffer, white);
-  rect(93, 99, 25, 17, dark);
-  std::snprintf(buffer, sizeof(buffer), "%03d", int(g.speed * 3.6f));
-  text(95, 101, buffer, white, 2);
-  text(100, 112, "KMH", yellow);
-  rect(3, 116, 114, 2, dark);
-  rect(3, 116, int(114 * g.progress()), 2, yellow);
-  for (int i = 0; i < SectorCount; ++i) {
-    int x = 3 + int(113.f * (SectorEnds[i] - 1) / (NodeCount - 5));
-    const uint16_t checkpoint_color =
-        g.splits[i] <= g.reference_splits[i] ? color(6, 15, 7) : color(15, 6, 4);
-    rect(x - 1, 114, 3, 3, i < g.split_count ? checkpoint_color : white);
-    if (i >= g.split_count)
-      rect(x, 115, 1, 1, dark);
+  std::snprintf(Buffer, sizeof(Buffer), "%d", Distance);
+  DrawCenteredText(14, Buffer, White);
+  DrawRectangle(93, 99, 25, 17, Dark);
+  std::snprintf(Buffer, sizeof(Buffer), "%03d", int(GameState.Speed * 3.6f));
+  DrawText(95, 101, Buffer, White, 2);
+  DrawText(100, 112, "KMH", Yellow);
+  DrawRectangle(3, 116, 114, 2, Dark);
+  DrawRectangle(3, 116, int(114 * GameState.Progress()), 2, Yellow);
+  for (int Index = 0; Index < SectorCount; ++Index) {
+    int CoordinateX = 3 + int(113.f * (SectorEnds[Index] - 1) / (NodeCount - 5));
+    const uint16_t CheckpointColor = GameState.Splits[Index] <= GameState.ReferenceSplits[Index]
+                                         ? MakeColor(6, 15, 7)
+                                         : MakeColor(15, 6, 4);
+    DrawRectangle(CoordinateX - 1, 114, 3, 3,
+                  Index < GameState.SplitCount ? CheckpointColor : White);
+    if (Index >= GameState.SplitCount)
+      DrawRectangle(CoordinateX, 115, 1, 1, Dark);
   }
-  if (g.recovery_message > 0) {
-    rect(12, 72, 96, 10, dark);
-    centered(75, "RECOVERED +3 SEC", yellow);
+  if (GameState.RecoveryMessage > 0) {
+    DrawRectangle(12, 72, 96, 10, Dark);
+    DrawCenteredText(75, "RECOVERED +3 SEC", Yellow);
   }
-  if (g.impact > .4f) {
-    rect(0, 0, W, 1, color(15, 5, 2));
-    rect(0, 0, 1, H, color(15, 5, 2));
+  if (GameState.Impact > .4f) {
+    DrawRectangle(0, 0, FramebufferWidth, 1, MakeColor(15, 5, 2));
+    DrawRectangle(0, 0, 1, FramebufferHeight, MakeColor(15, 5, 2));
   }
-  if (g.mode == Mode::Countdown) {
-    rect(45, 40, 30, 30, dark);
-    std::snprintf(buffer, sizeof(buffer), "%d", int(std::ceil(g.countdown)));
-    centered(45, buffer, yellow, 4);
+  if (GameState.CurrentMode == GameMode::Countdown) {
+    DrawRectangle(45, 40, 30, 30, Dark);
+    std::snprintf(Buffer, sizeof(Buffer), "%d", int(std::ceil(GameState.Countdown)));
+    DrawCenteredText(45, Buffer, Yellow, 4);
   }
-  if (g.mode == Mode::Racing && g.elapsed < .8f) {
-    rect(42, 42, 36, 19, dark);
-    centered(46, "GO", yellow, 2);
+  if (GameState.CurrentMode == GameMode::Racing && GameState.Elapsed < .8f) {
+    DrawRectangle(42, 42, 36, 19, Dark);
+    DrawCenteredText(46, "GO", Yellow, 2);
   }
-  if (g.mode == Mode::Paused) {
-    rect(5, 36, 110, 61, dark);
-    centered(42, "PAUSED", yellow, 2);
-    std::snprintf(buffer, sizeof(buffer), "%s RESUME", pause);
-    centered(57, buffer, white);
-    std::snprintf(buffer, sizeof(buffer), "%s RETRY", confirm);
-    centered(67, buffer, white);
-    std::snprintf(buffer, sizeof(buffer), "%s SELECT", back);
-    centered(77, buffer, white);
-    std::snprintf(buffer, sizeof(buffer), "%s SOUND %s", audio, g.muted ? "OFF" : "ON");
-    centered(88, buffer, yellow);
+  if (GameState.CurrentMode == GameMode::Paused) {
+    DrawRectangle(5, 36, 110, 61, Dark);
+    DrawCenteredText(42, "PAUSED", Yellow, 2);
+    std::snprintf(Buffer, sizeof(Buffer), "%s RESUME", Pause);
+    DrawCenteredText(57, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s RETRY", Confirm);
+    DrawCenteredText(67, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s SELECT", Back);
+    DrawCenteredText(77, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s SOUND %s", Audio, GameState.Muted ? "OFF" : "ON");
+    DrawCenteredText(88, Buffer, Yellow);
   }
-  if (diagnostics) {
-    rect(0, 22, 46, 15, dark);
-    std::snprintf(buffer, sizeof(buffer), "%d FPS", fps);
-    text(2, 24, buffer, white);
-    std::snprintf(buffer, sizeof(buffer), "%d TRI", face_count);
-    text(2, 31, buffer, yellow);
+  if (Diagnostics) {
+    DrawRectangle(0, 22, 46, 15, Dark);
+    std::snprintf(Buffer, sizeof(Buffer), "%d FPS", FramesPerSecond);
+    DrawText(2, 24, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%d TRI", FaceCount);
+    DrawText(2, 31, Buffer, Yellow);
   }
 }
-} // namespace rally
+} // namespace Rally

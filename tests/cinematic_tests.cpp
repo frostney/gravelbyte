@@ -6,149 +6,162 @@
 #include <cstring>
 #include <memory>
 #include <vector>
-using namespace rally;
-static void check(bool ok, const char *why) {
-  if (!ok) {
-    std::fprintf(stderr, "FAIL: %s\n", why);
+using namespace Rally;
+static void Check(bool Passed, const char *FailureReason) {
+  if (!Passed) {
+    std::fprintf(stderr, "FAIL: %s\n", FailureReason);
     std::exit(1);
   }
 }
 int main() {
-  auto game = std::make_unique<Game>();
-  Game &g = *game;
-  check(g.unlocked(0) && !g.unlocked(1) && !g.unlocked(2), "fresh progression");
-  g.select(2, 2);
-  g.mode = Mode::TrackSelect;
-  Input confirm;
-  confirm.action = true;
-  g.tick(.02f, confirm);
-  check(g.mode == Mode::TrackSelect, "locked track can be browsed but not started");
-  g.select(0, 0);
-  g.records[0].splits = g.default_splits();
-  check(!g.unlocked(1), "matching the target is not beating it");
-  for (float &time : g.records[0].splits)
-    time *= .99f;
-  check(g.unlocked(1) && !g.unlocked(2), "any car unlocks next track globally");
-  g.select(1, 1);
-  g.records[4].splits = g.default_splits();
-  for (float &time : g.records[4].splits)
-    time *= .99f;
-  g.toggle_audio();
-  SaveData save = encode_save(g);
-  Game restored;
-  check(load_save(restored, save) && restored.muted && restored.unlocked(2),
+  auto OwnedGame = std::make_unique<Game>();
+  Game &GameState = *OwnedGame;
+  Check(GameState.Unlocked(0) && !GameState.Unlocked(1) && !GameState.Unlocked(2),
+        "fresh progression");
+  GameState.SelectCarAndTrack(2, 2);
+  GameState.CurrentMode = GameMode::TrackSelect;
+  DrivingInput Confirm;
+  Confirm.Action = true;
+  GameState.Update(.02f, Confirm);
+  Check(GameState.CurrentMode == GameMode::TrackSelect,
+        "locked track can be browsed but not started");
+  GameState.SelectCarAndTrack(0, 0);
+  GameState.Records[0].Splits = GameState.GetDefaultSplits();
+  Check(!GameState.Unlocked(1), "matching the target is not beating it");
+  for (float &TimeValue : GameState.Records[0].Splits)
+    TimeValue *= .99f;
+  Check(GameState.Unlocked(1) && !GameState.Unlocked(2), "any car unlocks next track globally");
+  GameState.SelectCarAndTrack(1, 1);
+  GameState.Records[4].Splits = GameState.GetDefaultSplits();
+  for (float &TimeValue : GameState.Records[4].Splits)
+    TimeValue *= .99f;
+  GameState.ToggleAudio();
+  SaveData Save = EncodeSave(GameState);
+  Game Restored;
+  Check(LoadSave(Restored, Save) && Restored.Muted && Restored.Unlocked(2),
         "audio and progression survive reload");
-  SaveData legacy{};
-  FILE *fixture = std::fopen(GRAVELBYTE_V1_FIXTURE, "rb");
-  check(fixture && std::fread(&legacy, sizeof(legacy), 1, fixture) == 1,
+  SaveData Legacy{};
+  FILE *Fixture = std::fopen(GRAVELBYTE_V1_FIXTURE, "rb");
+  Check(Fixture && std::fread(&Legacy, sizeof(Legacy), 1, Fixture) == 1,
         "read pre-update save fixture");
-  std::fclose(fixture);
-  check(load_save(restored, legacy) && !restored.muted && restored.selected_car == 2 &&
-            restored.selected_track == 1 && restored.unlocked(1) &&
-            std::abs(restored.records[1].splits.back() - 92.f) < .001f,
+  std::fclose(Fixture);
+  Check(LoadSave(Restored, Legacy) && !Restored.Muted && Restored.SelectedCar == 2 &&
+            Restored.SelectedTrack == 1 && Restored.Unlocked(1) &&
+            std::abs(Restored.Records[1].Splits.back() - 92.f) < .001f,
         "v1 saves migrate selections, records and earned unlocks");
-  g.mode = Mode::Title;
-  bool seen[TrackCount]{};
-  for (int i = 0; i < 2400; ++i) {
-    g.tick(.02f, {});
-    seen[g.selected_track] = true;
+  GameState.CurrentMode = GameMode::Title;
+  bool Seen[TrackCount]{};
+  for (int Index = 0; Index < 2400; ++Index) {
+    GameState.Update(.02f, {});
+    Seen[GameState.SelectedTrack] = true;
   }
-  check(seen[0] && seen[1] && seen[2], "title showcases all tracks");
-  check(g.elapsed == 0, "attract driving does not race");
-  auto after = encode_save(g);
-  check(std::memcmp(&save, &after, sizeof(save)) == 0,
+  Check(Seen[0] && Seen[1] && Seen[2], "title showcases all tracks");
+  Check(GameState.Elapsed == 0, "attract driving does not race");
+  auto After = EncodeSave(GameState);
+  Check(std::memcmp(&Save, &After, sizeof(Save)) == 0,
         "showcase preserves selected course, settings and records");
-  g.tick(.02f, confirm);
-  check(g.mode == Mode::CarSelect && g.selected_track == 1 && g.selected_car == 1,
+  GameState.Update(.02f, Confirm);
+  Check(GameState.CurrentMode == GameMode::CarSelect && GameState.SelectedTrack == 1 &&
+            GameState.SelectedCar == 1,
         "continue restores player's selections");
-  g.select(1, 0);
-  std::vector<Vec> driven;
-  while (g.mode != Mode::Racing)
-    g.tick(.02f, {});
-  driven.push_back(g.car);
-  while (g.mode != Mode::Finished && driven.size() < 10000) {
-    g.tick(.02f, driving_input(g));
-    driven.push_back(g.car);
+  GameState.SelectCarAndTrack(1, 0);
+  std::vector<Vector3> Driven;
+  while (GameState.CurrentMode != GameMode::Racing)
+    GameState.Update(.02f, {});
+  Driven.push_back(GameState.CarPosition);
+  while (GameState.CurrentMode != GameMode::Finished && Driven.size() < 10000) {
+    GameState.Update(.02f, CalculateDrivingInput(GameState));
+    Driven.push_back(GameState.CarPosition);
   }
-  check(g.mode == Mode::Finished && !g.show_records, "finish starts with unobscured replay");
-  const auto result = g.splits;
-  auto result_save = encode_save(g);
-  auto renderer = std::make_unique<Renderer>();
-  std::array<uint16_t, W * H> pixels;
-  for (int frame = 25; frame < int(driven.size()) - 25; frame += 25) {
-    g.replay_time = frame * .02f - .001f;
-    g.replay_tick(.001f);
-    Vec delta = g.car - driven[frame];
-    check(std::sqrt(delta.x * delta.x + delta.y * delta.y + delta.z * delta.z) < .3f,
+  Check(GameState.CurrentMode == GameMode::Finished && !GameState.ShowRecords,
+        "finish starts with unobscured replay");
+  const auto Result = GameState.Splits;
+  auto ResultSave = EncodeSave(GameState);
+  auto SceneRenderer = std::make_unique<Renderer>();
+  std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels;
+  for (int Frame = 25; Frame < int(Driven.size()) - 25; Frame += 25) {
+    GameState.ReplayTime = Frame * .02f - .001f;
+    GameState.ReplayTick(.001f);
+    Vector3 Delta = GameState.CarPosition - Driven[Frame];
+    Check(std::sqrt(Delta.CoordinateX * Delta.CoordinateX + Delta.CoordinateY * Delta.CoordinateY +
+                    Delta.CoordinateZ * Delta.CoordinateZ) < .3f,
           "replay follows actual driving within 30cm");
-    for (int shot = 0; shot < 3; ++shot) {
-      g.cinematic_time = shot * tuning::ShotSeconds;
-      renderer->render(g, pixels.data());
-      check(renderer->dropped == 0, "cinematic geometry fits budget");
+    for (int Shot = 0; Shot < 3; ++Shot) {
+      GameState.CinematicTime = Shot * Tuning::ShotSeconds;
+      SceneRenderer->Render(GameState, Pixels.data());
+      Check(SceneRenderer->Dropped == 0, "cinematic geometry fits budget");
     }
   }
-  g.replay_time = 0;
-  Vec previous_camera{};
-  for (int frame = 0; frame < 800; ++frame) {
-    g.replay_tick(.02f);
-    g.cinematic_time = tuning::ShotSeconds;
-    renderer->render(g, pixels.data());
-    if (frame) {
-      Vec move = renderer->camera - previous_camera;
-      check(std::sqrt(move.x * move.x + move.y * move.y + move.z * move.z) < 2.f,
+  GameState.ReplayTime = 0;
+  Vector3 PreviousCamera{};
+  for (int Frame = 0; Frame < 800; ++Frame) {
+    GameState.ReplayTick(.02f);
+    GameState.CinematicTime = Tuning::ShotSeconds;
+    SceneRenderer->Render(GameState, Pixels.data());
+    if (Frame) {
+      Vector3 Move = SceneRenderer->Camera - PreviousCamera;
+      Check(std::sqrt(Move.CoordinateX * Move.CoordinateX + Move.CoordinateY * Move.CoordinateY +
+                      Move.CoordinateZ * Move.CoordinateZ) < 2.f,
             "roadside camera follows smoothly across road nodes");
     }
-    previous_camera = renderer->camera;
+    PreviousCamera = SceneRenderer->Camera;
   }
-  Input aux;
-  aux.auxiliary = true;
-  g.tick(.02f, aux);
-  check(g.show_records, "records toggle on");
-  g.tick(.02f, aux);
-  check(!g.show_records && g.splits == result, "records toggle off without changing results");
-  after = encode_save(g);
-  check(std::memcmp(&result_save, &after, sizeof(after)) == 0, "replay never changes saved result");
-  Input back;
-  back.back = true;
-  g.tick(.02f, back);
-  check(g.mode == Mode::TrackSelect, "finish back returns to existing track selector");
-  for (int track : {0, 2}) {
-    g.select(1, track);
-    g.segment = track == 0 ? tuning::BridgeStart + 3 : tuning::TunnelStart + 3;
-    g.car = g.roadside(g.segment, g.road[g.segment].half_width + 1);
-    g.locate();
-    g.physics(.01f, {});
-    check(std::abs(g.lateral) < g.road_width(), "bridge rails and tunnel walls constrain car");
+  DrivingInput AuxiliaryLabel;
+  AuxiliaryLabel.Auxiliary = true;
+  GameState.Update(.02f, AuxiliaryLabel);
+  Check(GameState.ShowRecords, "records toggle on");
+  GameState.Update(.02f, AuxiliaryLabel);
+  Check(!GameState.ShowRecords && GameState.Splits == Result,
+        "records toggle off without changing results");
+  After = EncodeSave(GameState);
+  Check(std::memcmp(&ResultSave, &After, sizeof(After)) == 0, "replay never changes saved result");
+  DrivingInput Back;
+  Back.Back = true;
+  GameState.Update(.02f, Back);
+  Check(GameState.CurrentMode == GameMode::TrackSelect,
+        "finish back returns to existing track selector");
+  for (int Track : {0, 2}) {
+    GameState.SelectCarAndTrack(1, Track);
+    GameState.Segment = Track == 0 ? Tuning::BridgeStart + 3 : Tuning::TunnelStart + 3;
+    GameState.CarPosition =
+        GameState.Roadside(GameState.Segment, GameState.Road[GameState.Segment].HalfWidth + 1);
+    GameState.Locate();
+    GameState.SimulatePhysics(.01f, {});
+    Check(std::abs(GameState.Lateral) < GameState.RoadWidth(),
+          "bridge rails and tunnel walls constrain car");
   }
-  for (int track = 0; track < TrackCount; ++track) {
-    g.select(1, track);
-    g.mode = Mode::Finished;
-    for (int node = 5; node < NodeCount - 5; node += 3) {
-      g.segment = node;
-      g.car = g.road[node].p;
-      g.camera_yaw = g.yaw = g.road[node].heading;
-      g.camera_height = g.car.y;
-      for (int shot = 0; shot < 3; ++shot) {
-        g.cinematic_time = shot * tuning::ShotSeconds;
-        renderer->render(g, pixels.data());
-        check(renderer->dropped == 0, "every cinematic shot fits on every course");
-        if (g.tunnel(node))
-          check(renderer->camera.y < g.car.y + tuning::TunnelHeight,
+  for (int Track = 0; Track < TrackCount; ++Track) {
+    GameState.SelectCarAndTrack(1, Track);
+    GameState.CurrentMode = GameMode::Finished;
+    for (int NodeIndex = 5; NodeIndex < NodeCount - 5; NodeIndex += 3) {
+      GameState.Segment = NodeIndex;
+      GameState.CarPosition = GameState.Road[NodeIndex].Position;
+      GameState.CameraYaw = GameState.Yaw = GameState.Road[NodeIndex].Heading;
+      GameState.CameraHeight = GameState.CarPosition.CoordinateY;
+      for (int Shot = 0; Shot < 3; ++Shot) {
+        GameState.CinematicTime = Shot * Tuning::ShotSeconds;
+        SceneRenderer->Render(GameState, Pixels.data());
+        Check(SceneRenderer->Dropped == 0, "every cinematic shot fits on every course");
+        if (GameState.Tunnel(NodeIndex))
+          Check(SceneRenderer->Camera.CoordinateY <
+                    GameState.CarPosition.CoordinateY + Tuning::TunnelHeight,
                 "tunnel camera clears ceiling");
       }
     }
   }
   // A long stationary run exercises replay compaction, including the final partial sample.
-  g.select(1, 0);
-  g.mode = Mode::Racing;
-  for (int i = 0; i < 26000; ++i)
-    g.tick(.02f, {});
-  g.record_pose(true);
-  check(g.replay_count <= int(tuning::ReplayCapacity) && g.replay_interval > tuning::ReplayInterval,
+  GameState.SelectCarAndTrack(1, 0);
+  GameState.CurrentMode = GameMode::Racing;
+  for (int Index = 0; Index < 26000; ++Index)
+    GameState.Update(.02f, {});
+  GameState.RecordPose(true);
+  Check(GameState.ReplayCount <= int(Tuning::ReplayCapacity) &&
+            GameState.ReplayInterval > Tuning::ReplayInterval,
         "long recordings stay bounded");
-  g.replay_time = g.replay_duration - .02f;
-  g.replay_tick(.01f);
-  check(std::isfinite(g.car.x) && g.segment < NodeCount, "compacted replay remains valid");
+  GameState.ReplayTime = GameState.ReplayDuration - .02f;
+  GameState.ReplayTick(.01f);
+  Check(std::isfinite(GameState.CarPosition.CoordinateX) && GameState.Segment < NodeCount,
+        "compacted replay remains valid");
   std::puts("PASS: progression, persistent sound, actual-run replay, cinematic geometry, physical "
             "landmarks");
 }

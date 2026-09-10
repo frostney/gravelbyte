@@ -6,45 +6,66 @@
 
 // An XZ barycentric query detects terrain folded over the drivable road,
 // independently of the renderer's depth test or its camera projection.
-static float triangle_height(rally::Vec p, rally::Vec a, rally::Vec b, rally::Vec c) {
-  float d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
-  if (std::abs(d) < .001f)
+static float TriangleHeight(Rally::Vector3 Position, Rally::Vector3 FirstVertex,
+                            Rally::Vector3 SecondVertex, Rally::Vector3 ThirdVertex) {
+  float Difference = (SecondVertex.CoordinateZ - ThirdVertex.CoordinateZ) *
+                         (FirstVertex.CoordinateX - ThirdVertex.CoordinateX) +
+                     (ThirdVertex.CoordinateX - SecondVertex.CoordinateX) *
+                         (FirstVertex.CoordinateZ - ThirdVertex.CoordinateZ);
+  if (std::abs(Difference) < .001f)
     return -std::numeric_limits<float>::infinity();
-  float u = ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.z - c.z)) / d;
-  float v = ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.z - c.z)) / d;
-  return u >= 0 && v >= 0 && u + v <= 1 ? u * a.y + v * b.y + (1 - u - v) * c.y
-                                        : -std::numeric_limits<float>::infinity();
+  float HorizontalFraction = ((SecondVertex.CoordinateZ - ThirdVertex.CoordinateZ) *
+                                  (Position.CoordinateX - ThirdVertex.CoordinateX) +
+                              (ThirdVertex.CoordinateX - SecondVertex.CoordinateX) *
+                                  (Position.CoordinateZ - ThirdVertex.CoordinateZ)) /
+                             Difference;
+  float Value = ((ThirdVertex.CoordinateZ - FirstVertex.CoordinateZ) *
+                     (Position.CoordinateX - ThirdVertex.CoordinateX) +
+                 (FirstVertex.CoordinateX - ThirdVertex.CoordinateX) *
+                     (Position.CoordinateZ - ThirdVertex.CoordinateZ)) /
+                Difference;
+  return HorizontalFraction >= 0 && Value >= 0 && HorizontalFraction + Value <= 1
+             ? HorizontalFraction * FirstVertex.CoordinateY + Value * SecondVertex.CoordinateY +
+                   (1 - HorizontalFraction - Value) * ThirdVertex.CoordinateY
+             : -std::numeric_limits<float>::infinity();
 }
 int main() {
-  using namespace rally;
-  Game g;
-  int samples = 0;
-  for (int track = 0; track < TrackCount; ++track) {
-    g.select(1, track);
-    for (int n = 1; n < NodeCount - 1; ++n)
-      for (float t : {0.f, .25f, .5f, .75f})
-        for (float fraction : {-.95f, -.5f, 0.f, .5f, .95f}) {
-          Vec p = g.roadside(n, g.road[n].half_width * fraction) * (1 - t) +
-                  g.roadside(n + 1, g.road[n + 1].half_width * fraction) * t;
-          ++samples;
-          for (int i = std::max(0, n - 5); i < std::min(NodeCount - 1, n + 31); ++i)
-            for (int side = 0; side < 2; ++side) {
-              int far = side ? 9 : 0, bank = side ? 8 : 1, verge = side ? 7 : 2;
-              const auto &a = g.terrain[i];
-              const auto &b = g.terrain[i + 1];
-              float h = std::max({triangle_height(p, a[far], b[far], b[bank]),
-                                  triangle_height(p, a[far], b[bank], a[bank]),
-                                  triangle_height(p, a[bank], b[bank], b[verge]),
-                                  triangle_height(p, a[bank], b[verge], a[verge])});
-              if (h > p.y + .1f) {
+  using namespace Rally;
+  Game GameState;
+  int Samples = 0;
+  for (int Track = 0; Track < TrackCount; ++Track) {
+    GameState.SelectCarAndTrack(1, Track);
+    for (int Count = 1; Count < NodeCount - 1; ++Count)
+      for (float SegmentFraction : {0.f, .25f, .5f, .75f})
+        for (float Fraction : {-.95f, -.5f, 0.f, .5f, .95f}) {
+          Vector3 Position =
+              GameState.Roadside(Count, GameState.Road[Count].HalfWidth * Fraction) *
+                  (1 - SegmentFraction) +
+              GameState.Roadside(Count + 1, GameState.Road[Count + 1].HalfWidth * Fraction) *
+                  SegmentFraction;
+          ++Samples;
+          for (int Index = std::max(0, Count - 5); Index < std::min(NodeCount - 1, Count + 31);
+               ++Index)
+            for (int Side = 0; Side < 2; ++Side) {
+              int Far = Side ? 9 : 0, Bank = Side ? 8 : 1, Verge = Side ? 7 : 2;
+              const auto &CurrentRing = GameState.Terrain[Index];
+              const auto &NextRing = GameState.Terrain[Index + 1];
+              float Height = std::max(
+                  {TriangleHeight(Position, CurrentRing[Far], NextRing[Far], NextRing[Bank]),
+                   TriangleHeight(Position, CurrentRing[Far], NextRing[Bank], CurrentRing[Bank]),
+                   TriangleHeight(Position, CurrentRing[Bank], NextRing[Bank], NextRing[Verge]),
+                   TriangleHeight(Position, CurrentRing[Bank], NextRing[Verge],
+                                  CurrentRing[Verge])});
+              if (Height > Position.CoordinateY + .1f) {
                 std::fprintf(stderr,
                              "Terrain strip %d intrudes %.2fm above road node %d (t=%.2f, width "
                              "fraction=%.2f)\n",
-                             i, h - p.y, n, t, fraction);
+                             Index, Height - Position.CoordinateY, Count, SegmentFraction,
+                             Fraction);
                 return 1;
               }
             }
         }
   }
-  std::printf("PASS: %d road corridor samples clear of overlapping hillsides\n", samples);
+  std::printf("PASS: %d road corridor samples clear of overlapping hillsides\n", Samples);
 }
