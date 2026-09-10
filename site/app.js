@@ -40,7 +40,7 @@ function useInput(input) {
     gamepad:
       'D-pad / left stick steer · RT / A gas · LT / B brake · X drift · A confirm · B back · Start pause · X sound in title/pause or records after finishing',
     touch:
-      'Hold arrows to steer. Hold Gas, Brake or Drift to drive. Tap Go to confirm, Back to choose again, and Pause to stop.',
+      'Hold arrows to steer; Gas, Brake and Drift to drive. Go confirms; Back returns; Pause stops. Records shows splits after finishing.',
   };
   $('controls').textContent = hints[input];
 }
@@ -293,9 +293,3 @@ try {
     'The game could not load. Please reload the page or download the PicoSystem version.';
   console.error(error);
 }
-fetch('version.json')
-  .then((r) => (r.ok ? r.json() : null))
-  .then((v) => {
-    if (v) $('version').textContent = `Build ${v.commit.slice(0, 7)} · Browser + PicoSystem`;
-  })
-  .catch(() => {});

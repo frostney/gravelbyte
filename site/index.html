@@ -6,28 +6,13 @@
     <meta name="theme-color" content="#152521" />
     <meta
       name="description"
-      content="Three cars. Rally on PicoSystem and in your browser. Play Gravelbyte in your browser or take the rally onto PicoSystem."
+      content="Play Gravelbyte in your browser or download it for PicoSystem."
     />
     <title>Gravelbyte</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <a class="wordmark" href="./">GRAVELBYTE<span class="mark">///</span></a
-      ><a href="https://github.com/frostney/gravelbyte">Source ↗</a>
-    </header>
     <main>
-      <section class="intro">
-        <h1>Gravelbyte</h1>
-        <p>
-          Race through woodland bridges, coastal beaches and snowy mountain tunnels. Beat each
-          track’s target to unlock the next.
-        </p>
-        <a class="download" href="gravelbyte.uf2" download
-          >Download for PicoSystem <span>↓</span></a
-        >
-        <p class="version" id="version">Local preview</p>
-      </section>
       <section class="play" aria-label="Play Gravelbyte">
         <div id="stage" class="stage">
           <canvas
@@ -35,7 +20,7 @@
             width="120"
             height="120"
             tabindex="0"
-            aria-label="Gravelbyte rally game. Controls are listed below."
+            aria-label="Gravelbyte rally game. Controls are listed beside or below the game."
           ></canvas>
           <div id="start-overlay">
             <button id="play" disabled>Loading game…</button>
@@ -58,67 +43,39 @@
           </div>
         </div>
         <div class="toolbar">
-          <span id="input-label">Keyboard</span>
           <div>
             <button id="pause" disabled>Pause</button
             ><button id="mute" aria-pressed="false">Mute</button
             ><button id="fullscreen">Fullscreen</button>
           </div>
-        </div>
-        <p id="controls" class="controls">
-          ← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause
-        </p>
-        <p id="save-status" role="status" class="save-status">Records stay in this browser.</p>
-      </section>
-      <section class="courses">
-        <p class="eyebrow">TRACKS</p>
-        <div class="course-grid">
-          <article>
-            <span>FOREST / GRAVEL</span>
-            <h2>Bracken Ridge</h2>
-            <p>Woodland gravel, a river bridge and a demanding forest descent.</p>
-          </article>
-          <article>
-            <span>SUMMER / DRY GRAVEL</span>
-            <h2>Sunmeadow Run</h2>
-            <p>A palm-lined sandy beach with sweeping bends beside the water.</p>
-          </article>
-          <article>
-            <span>WINTER / SNOW & ICE</span>
-            <h2>Frostpine Pass</h2>
-            <p>Snowy mountains, blue ice and a tunnel bored through a rocky peak.</p>
-          </article>
+          <a href="https://github.com/frostney/gravelbyte">GitHub ↗</a>
         </div>
       </section>
-      <section class="install">
-        <div>
-          <p class="eyebrow">TAKE IT OFFLINE</p>
-          <h2>Made for PicoSystem.</h2>
-          <p>The same game, on the small screen it was built for.</p>
-        </div>
-        <ol>
-          <li>Connect your PicoSystem by USB.</li>
-          <li>
-            Hold <strong>X</strong> while switching it on. A drive named
-            <strong>RPI-RP2</strong> appears.
-          </li>
-          <li>
-            Copy <strong>gravelbyte.uf2</strong> to that drive. The device restarts into the game.
-          </li>
-        </ol>
-        <p class="device-controls">
-          PicoSystem controls: D-pad steers and selects · A gas / confirm · B brake / back · X drift
-          · Y pause. X toggles sound on the title/pause screen and records after finishing. Use A to
-          retry or B to return to track selection.
-        </p>
-      </section>
+      <aside aria-label="Instructions">
+        <section aria-labelledby="controls-heading">
+          <h2 id="controls-heading"><span id="input-label">Keyboard</span> controls</h2>
+          <p id="controls" class="controls">
+            ← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause
+          </p>
+          <p id="save-status" role="status" class="save-status">Records stay in this browser.</p>
+        </section>
+        <section class="install" aria-label="PicoSystem download and setup">
+          <a class="download" href="gravelbyte.uf2" download>Download for PicoSystem ↓</a>
+          <ol>
+            <li>Connect PicoSystem by USB.</li>
+            <li>Hold <strong>X</strong> while switching it on.</li>
+            <li>
+              Copy <strong>gravelbyte.uf2</strong> to <strong>RPI-RP2</strong>. It restarts
+              automatically.
+            </li>
+          </ol>
+          <p class="device-controls">
+            D-pad steer / select · A gas / confirm · B brake / back · X drift · Y pause. X: sound in
+            title / pause, records at finish. A retry; B tracks.
+          </p>
+        </section>
+      </aside>
     </main>
-    <footer>
-      Handmade roads. Software 3D. No account needed.<a
-        href="https://github.com/frostney/gravelbyte/issues"
-        >Report a problem ↗</a
-      >
-    </footer>
     <script type="module" src="app.js"></script>
   </body>
 </html>

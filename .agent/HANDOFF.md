@@ -1,3 +1,68 @@
+# Minimal GitHub Pages — 2026-09-10
+
+Current change: feat/minimal-pages, based on main 61d27bb. The page now contains
+only the game and toolbar, active-input instructions, GitHub link, PicoSystem
+download/setup and device controls. Removed duplicate branding, marketing copy,
+course cards, footer, external fonts and the visible build badge/fetch.
+Fullscreen preserves the square image with letterboxing on wide screens;
+verified visually at 844x390 with touch controls.
+
+Reviewed source diff and visually inspected desktop, phone and landscape output.
+Eight Chromium checks pass: existing keyboard/touch/gamepad flows and five
+above-fold viewport checks (1366x768, 1280x720, 390x844, 375x667, 844x390).
+Smaller viewports retain scrolling rather than clipping instructions or reducing
+the game below its usable size. Physical phone/gamepad testing was not repeated.
+Native six tests, C++/web formatting and native/WASM/PicoSystem builds pass.
+Game source and firmware behavior unchanged; no device flash is needed.
+
+Publish with create-pr and exact-head CI, then the main Pages workflow under
+existing session authorization. Consult GitHub for final PR/deployment state.
+The original checkout retains its audit handoff; this isolated worktree preserves
+that record below. Audit remediation still awaits a selected batch.
+
+# Codebase audit — 2026-09-10
+
+Audited main 61d27bb2066aaa3b2bccbe49386f2bfce66da305 using upstream
+codebase-audit at known-good-route 4bb09419189430000711893b7ed10ad7d22c6211.
+Audit-only; no remediation, publication, flashing or subagents. This handoff
+entry is the sole tracked change, required by the workspace handoff protocol.
+Disposable copy, native probes, mutations and local browser server were removed.
+Original tracked bytes were verified unchanged before this handoff update.
+
+Findings (final explanation in the task response):
+- CA-1 IMPORTANT OPERATIONS: single-sector Pico save erases the only good record
+  before programming its replacement; interrupted-write format probes lose unlocks.
+- CA-2 IMPORTANT OPERATIONS: unversioned cached assets and separate version.json
+  allow old WASM to run while the page claims the new build. Reproduced with real
+  old/current artifacts in an isolated browser site; not observed on live deployment.
+- CA-3 IMPORTANT BEHAVIOR: missing gravelbyte.js aborts static import before the
+  load-error handler; browser remains at Loading game. Missing WASM is handled.
+- CA-4 IMPORTANT QUALITY: halved beach targets survive all six native tests;
+  stage_drive checks completion under 150 seconds, not beating the actual target.
+- CA-5 IMPORTANT OPERATIONS: BENCHMARK_DONE reads the latest renderer.dropped,
+  not a race aggregate. An injected overflow resets to zero on the next render.
+  Existing hardware logs cannot prove zero dropped geometry across every frame.
+- CA-6 IMPROVEMENT ARCHITECTURE_RISK: Renderer::render mixes camera, course/car
+  mesh, raster scheduling and all UI. 90-day file history: five touches including
+  creation, 1085 additions/117 deletions; all nine repository commits on one day.
+  This is a bounded early risk signal, not a long-term churn trend.
+- CA-7 IMPROVEMENT BEHAVIOR: canvas menus expose no selected car/track/lock/record
+  text through the accessibility tree; data attributes alone do not announce it.
+
+Suggested independent batches: safe saves (CA-1); browser release/loading
+(CA-2/3); acceptance checks and telemetry (CA-4/5); renderer separation (CA-6);
+accessible menu/status text (CA-7). Await a selected batch before implementing.
+
+Executed: six native tests, six ASan/UBSan tests, three Chromium integration
+checks, C++/web formatting, two reversible test mutations, interrupted-save
+format probes, render overflow reset, missing JS/WASM and mixed-release browser
+flows. Checksum-bypass mutation correctly failed; target mutation did not.
+2,547 non-tunnel road samples had no mountain overlap. Live Pages and exact-head
+CI verified; origin robots.txt allows crawling. No physical power-cut test, new
+hardware benchmark, screen-reader session, mobile device or real gamepad test.
+
+## Prior implementation handoff
+
 # Gravelbyte: palm beach and mountain tunnel
 
 Current update: feat/beach-palms-and-mountain-tunnel, game code 6dab658.
