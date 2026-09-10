@@ -1,0 +1,95 @@
+name: Build and publish
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gravelbyte-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: Native, web and PicoSystem
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libsdl2-dev gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          python3 -m pip install clang-format==23.1.0
+      - name: Format and native contracts
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target format-check
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+      - name: Emscripten 4.0.23
+        run: |
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.23
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.23
+      - name: Browser build and tests
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-web
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run test:web
+      - name: Pinned Pico SDKs
+        run: |
+          git init "$RUNNER_TEMP/pico-sdk"
+          git -C "$RUNNER_TEMP/pico-sdk" remote add origin https://github.com/raspberrypi/pico-sdk.git
+          git -C "$RUNNER_TEMP/pico-sdk" fetch --depth 1 origin a1438dff1d38bd9c65dbd693f0e5db4b9ae91779
+          git -C "$RUNNER_TEMP/pico-sdk" checkout FETCH_HEAD
+          git -C "$RUNNER_TEMP/pico-sdk" submodule update --init --depth 1 lib/tinyusb
+          git init "$RUNNER_TEMP/picosystem"
+          git -C "$RUNNER_TEMP/picosystem" remote add origin https://github.com/pimoroni/picosystem.git
+          git -C "$RUNNER_TEMP/picosystem" fetch --depth 1 origin 9a26b2adbebaf4cbf0cb646fa542304202996cb4
+          git -C "$RUNNER_TEMP/picosystem" checkout FETCH_HEAD
+      - name: PicoSystem and matching download
+        run: |
+          export PICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" PICOSYSTEM_DIR="$RUNNER_TEMP/picosystem"
+          cmake -S . -B build-pico -G Ninja -DGRAVELBYTE_DEVICE=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-pico
+          cp build-pico/gravelbyte.uf2 build-web/site/
+          printf '{"commit":"%s"}\n' "$GITHUB_SHA" > build-web/site/version.json
+          touch build-web/site/.nojekyll
+          cd build-web/site
+          sha256sum gravelbyte.uf2 gravelbyte.wasm > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gravelbyte-${{ github.sha }}
+          path: |
+            build-pico/gravelbyte.uf2
+            build-web/site
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-failures
+          path: test-results
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: build-web/site
+  deploy:
+    name: GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

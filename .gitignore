@@ -1,0 +1,8 @@
+build*/
+output/
+.DS_Store
+*.uf2
+*.elf
+node_modules/
+test-results/
+playwright-report/

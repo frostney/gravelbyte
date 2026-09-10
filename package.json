@@ -1,0 +1,7 @@
+{
+  "name": "gravelbyte-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {"test:web": "playwright test"},
+  "devDependencies": {"@playwright/test": "1.63.0"}
+}
