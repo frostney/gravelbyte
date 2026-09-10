@@ -275,7 +275,7 @@ void Game::demo_tick(float dt) {
 int Game::section(int node) { return node < 73 ? 0 : node < 151 ? 1 : node < 221 ? 2 : 3; }
 const char *Game::section_name(int node) const {
   static const char *names[] = {"BRACKEN WOOD", "HIGH MOOR", "SLATE RIDGE", "FERN VALLEY"};
-  static const char *summer[] = {"HAYFIELD", "GOLDEN CREST", "SUNSTONE", "ORCHARD"};
+  static const char *summer[] = {"PALM SHORE", "GOLDEN DUNES", "SUNSTONE", "TIDELINE"};
   static const char *winter[] = {"PINE GATE", "ICE HOLLOW", "SNOW RIDGE", "FROST VALLEY"};
   return (selected_track == 0 ? names : selected_track == 1 ? summer : winter)[section(node)];
 }
@@ -316,12 +316,15 @@ float Game::terrain_height(int i, float side) const {
     return n.p.y -
            tuning::BeachDrop * clamp((distance - verge) / std::max(1.f, bank - verge), 0, 1);
   float rise = side < 0 ? n.verge_left : n.verge_right;
+  if (selected_track == 1)
+    rise = .6f + .4f * std::sin(i * .19f);
   if (selected_track == 2)
     rise += 5.f;
   rise *= std::min(1.f, (bank - verge) / 6.f);
   if (distance <= bank)
     return n.p.y + edge * n.bank + (rise - edge * n.bank) * (distance - verge) / (bank - verge);
-  return n.p.y + rise + (distance - bank) * (.12f + (side < 0 ? .08f : -.14f));
+  return n.p.y + rise +
+         (distance - bank) * (selected_track == 1 ? .025f : (.12f + (side < 0 ? .08f : -.14f)));
 }
 Vec Game::roadside(int i, float side) const {
   i = std::clamp(i, 0, NodeCount - 1);

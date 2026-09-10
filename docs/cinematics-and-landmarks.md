@@ -12,9 +12,10 @@ replays the actual drive, with the records panel hidden initially. X/Space/Recor
 shows five cumulative gate deltas against the default target and the prior best.
 A retries; B returns to the existing track selector. Taglines are removed.
 
-Bracken Ridge has a river bridge and solid rails. Sunmeadow Run has a beach and
+Bracken Ridge has a river bridge and solid rails. Sunmeadow Run follows a sandy beach throughout, with palms, low inland dunes and
 water alongside the road, retaining ordinary off-road consequences. Frostpine
-Pass has snowy mountains and a tunnel with solid walls. The existing road
+Pass has a tunnel bored through a broad, snow-covered rock mountain. Its portal
+faces leave the road open, and its slopes stay within the local road corridor. The existing road
 centerlines and car tuning are retained; structure collisions are local additions.
 
 ## Implementation boundaries

@@ -177,6 +177,7 @@ struct Renderer {
   void box(Vec p, Vec size, float yaw, uint16_t color);
   void tree(Vec p, float height, int seed);
   void snow_tree(Vec p, float height, int seed);
+  void palm_tree(Vec p, float height, int seed);
   void distant_snow_tree(Vec p, float height, int seed, bool snow = true);
   void raster(const Triangle &triangle);
   void rect(int x, int y, int w, int h, uint16_t color);
