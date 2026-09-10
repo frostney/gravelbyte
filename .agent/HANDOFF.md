@@ -4,6 +4,8 @@ Current change: feat/minimal-pages, based on main 61d27bb. The page now contains
 only the game and toolbar, active-input instructions, GitHub link, PicoSystem
 download/setup and device controls. Removed duplicate branding, marketing copy,
 course cards, footer, external fonts and the visible build badge/fetch.
+Fullscreen preserves the square image with letterboxing on wide screens;
+verified visually at 844x390 with touch controls.
 
 Reviewed source diff and visually inspected desktop, phone and landscape output.
 Eight Chromium checks pass: existing keyboard/touch/gamepad flows and five
