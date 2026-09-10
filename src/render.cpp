@@ -307,26 +307,36 @@ void Renderer::raster(const Triangle &t) {
       if (left > right)
         continue;
       int step = hi > lo ? (zhi - zlo) / (hi - lo) : 0, z = zlo + (left - lo) * step;
-      for (int x = left; x <= right; ++x, z += step) {
-        const int offset = y * W + x;
-        if ((z >> 8) >= depth_buffer[offset]) {
-          depth_buffer[offset] = uint16_t(z >> 8);
-          uint16_t material = t.color;
-          if (shadow && x >= shadow->left && x <= shadow->right && y >= shadow->top &&
-              y <= shadow->bottom) {
-            bool positive = false, negative = false;
-            for (int i = 0, j = shadow->count - 1; i < shadow->count; j = i++) {
-              int cross = (shadow->x[i] - shadow->x[j]) * (y - shadow->y[j]) -
-                          (shadow->y[i] - shadow->y[j]) * (x - shadow->x[j]);
-              positive |= cross > 0;
-              negative |= cross < 0;
-              if (positive && negative)
-                break;
-            }
-            if (!(positive && negative))
-              material = shadow_color;
+      if (!shadow || y < shadow->top || y > shadow->bottom) {
+        for (int x = left; x <= right; ++x, z += step) {
+          const int offset = y * W + x;
+          if ((z >> 8) >= depth_buffer[offset]) {
+            depth_buffer[offset] = uint16_t(z >> 8);
+            pixels[offset] = t.color;
           }
-          pixels[offset] = material;
+        }
+      } else {
+        // Intersect the convex material mask once per scanline, not per pixel.
+        int mask_left = W, mask_right = -1;
+        for (int i = 0, j = shadow->count - 1; i < shadow->count; j = i++) {
+          const int y0 = shadow->y[j], y1 = shadow->y[i], x0 = shadow->x[j], x1 = shadow->x[i];
+          if (y < std::min(y0, y1) || y > std::max(y0, y1))
+            continue;
+          if (y0 == y1) {
+            mask_left = std::min(mask_left, std::min(x0, x1));
+            mask_right = std::max(mask_right, std::max(x0, x1));
+          } else {
+            int x = x0 + (x1 - x0) * (y - y0) / (y1 - y0);
+            mask_left = std::min(mask_left, x);
+            mask_right = std::max(mask_right, x);
+          }
+        }
+        for (int x = left; x <= right; ++x, z += step) {
+          const int offset = y * W + x;
+          if ((z >> 8) >= depth_buffer[offset]) {
+            depth_buffer[offset] = uint16_t(z >> 8);
+            pixels[offset] = (x >= mask_left && x <= mask_right) ? shadow_color : t.color;
+          }
         }
       }
     }
