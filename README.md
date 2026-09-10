@@ -144,7 +144,8 @@ and report that workload in each result. `-DGRAVELBYTE_BENCHMARK_START=6` starts
 course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
 `-DGRAVELBYTE_SMOKE=ON` builds a separate real-save diagnostic: it toggles sound,
-changes car, starts a race, pauses and resumes. It prints
+changes car, starts a race, changes sound and pace-note options while paused,
+and resumes. It prints
 `SAVE_OK` after read-back verification and `SMOKE_DONE` after reaching racing.
 Do not combine the two diagnostic options. Always restore the normal player.
 The board is explicitly `pimoroni_picosystem`: the generic Pico's 2MiB flash

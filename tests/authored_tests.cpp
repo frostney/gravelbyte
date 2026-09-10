@@ -16,6 +16,17 @@ static void Press(Game &GameState, DrivingInput Input) {
   GameState.Update(.02f, Input);
 }
 int main() {
+  Game CountdownSave;
+  CountdownSave.Restart();
+  CountdownSave.SaveRequested = false;
+  CountdownSave.Update(.02f, {});
+  Check(CountdownSave.CurrentMode == GameMode::Countdown && CountdownSave.DriftHintSeen &&
+            CountdownSave.ShowDriftHint && CountdownSave.SaveRequested,
+        "first drift hint is persisted during countdown while its display remains visible");
+  CountdownSave.SaveRequested = false;
+  while (CountdownSave.CurrentMode == GameMode::Countdown)
+    CountdownSave.Update(.02f, {});
+  Check(!CountdownSave.SaveRequested, "entering racing does not request a flash write");
   Game GameState;
   const auto &Forest = GetStageLayout(0), &Beach = GetStageLayout(1), &Snow = GetStageLayout(2);
   Check(Beach.SegmentLength < Forest.SegmentLength && Forest.SegmentLength < Snow.SegmentLength,

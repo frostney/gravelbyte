@@ -34,4 +34,8 @@ loop changes were made.
 Validation includes all nine unassisted and nine assisted full-course drives,
 medal boundaries, menu/option persistence, absent-feature pace notes, engine
 shifts, terrain/shadow regressions and flash corruption/interrupted writes.
-Hardware results are recorded separately after the complete device run.
+Real-save hardware testing also covers six verified writes and pause/resume.
+The first-hint flag is saved during countdown, while its hint remains visible;
+flash writes are deferred during racing. This fixes a measured 76ms startup
+hitch that the non-saving benchmark could not reveal. Hardware race results are
+recorded separately after the final complete device run.
