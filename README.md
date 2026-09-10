@@ -120,7 +120,8 @@ The renderer uses a 120×120 RGBA4444 framebuffer and a depth buffer. Only the
 selected course's terrain is generated. Car shadows change the material of the
 existing ground triangles, so they follow slopes without a coplanar overlay.
 
-The PicoSystem target is 50fps with a 30fps minimum during normal racing. Host
+The PicoSystem runs at the SDK display cadence around 40fps, with a 30fps minimum
+during normal racing and the default clock unchanged. Host
 tests cannot establish device performance. See [validation](docs/validation.md)
 for measured results and [target calibration](docs/targets.md) for reference runs.
 
@@ -148,9 +149,30 @@ The Pascal experiment belongs to [FemtoPascal](https://github.com/frostney/Femto
 
 ## Code style
 
-Use descriptive PascalCase identifiers in owned C++ and browser JavaScript.
+Use descriptive PascalCase identifiers in owned C++ (`GravelByte` namespace),
+and descriptive camelCase bindings and properties in browser JavaScript.
 Platform entry points and external API names retain their required spelling.
 Run `clang-tidy -p build src/game.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp`
 for naming checks, alongside the existing C++ and web format checks. CI enforces
 the C++ naming rules. Keep save layouts and serialized keys compatible when
 renaming fields.
+
+## Development controls and checks
+
+Run `npm ci` to install Lefthook. Its pre-commit checks run clang-tidy against
+the native compilation database (including all shared headers), clang-format,
+and Prettier. Install clang-tidy, pinned clang-format 23.1.0, CMake and SDL2 first.
+Platform adapters are additionally checked by their PicoSystem/WASM builds.
+C++ uses descriptive PascalCase identifiers in namespace `GravelByte`; JavaScript
+uses descriptive camelCase bindings and properties. External API names retain
+their required spelling.
+
+Configure `-DGRAVELBYTE_DIAGNOSTICS=ON` for the developer FPS overlay: Up+Y on
+PicoSystem or F1 on desktop. Release builds omit these shortcuts.
+
+The pinned PicoSystem SDK waits for panel VSYNC, giving about 39.5 displayed
+frames per second. We accept that cadence, keep its default 250MHz clock, and
+require at least 30fps during normal racing. Telemetry separates rendering,
+SDK update time, buffer-swap time, elapsed display transfer and SDK wait percent.
+`flip_elapsed_us` is elapsed transfer time observed after update, not CPU work;
+`wait_percent` is busy-wait opportunity, not a battery-life measurement.

@@ -7,7 +7,7 @@
 #include "pico/time.h"
 #endif
 
-namespace Rally {
+namespace GravelByte {
 static uint32_t ProfileTimeMicroseconds() {
 #ifdef GRAVELBYTE_PROFILE
   return time_us_32();
@@ -1168,4 +1168,4 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     DrawText(2, 31, Buffer, Yellow);
   }
 }
-} // namespace Rally
+} // namespace GravelByte

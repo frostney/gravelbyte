@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace Rally {
+namespace GravelByte {
 float Clamp(float Value, float Minimum, float Maximum) {
   return std::max(Minimum, std::min(Maximum, Value));
 }
@@ -176,6 +176,7 @@ void Game::Restart() {
   VerticalSpeed = Pitch = Roll = 0;
   Airborne = false;
   SurfaceAvailable = true;
+  StartHeld = true;
   Jumps = 0;
   Velocity = {};
   Speed = SteeringInput = Lateral = SegmentFraction = Elapsed = Impact = Stranded = Slip = 0;
@@ -499,6 +500,15 @@ void Game::Recover() {
   Impact = .4f;
 }
 void Game::SimulatePhysics(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
+  if (StartHeld) {
+    if (PlayerInput.Throttle || PlayerInput.Brake || Velocity.CoordinateX != 0 ||
+        Velocity.CoordinateZ != 0 || Segment != 1 ||
+        CarPosition.CoordinateX != Road[1].Position.CoordinateX ||
+        CarPosition.CoordinateZ != Road[1].Position.CoordinateZ)
+      StartHeld = false;
+    else
+      return;
+  }
   Impact = std::max(0.f, Impact - DeltaTimeSeconds);
   RecoveryMessage = std::max(0.f, RecoveryMessage - DeltaTimeSeconds);
   const float RotationSine = std::sin(Yaw), RotationCosine = std::cos(Yaw);
@@ -927,4 +937,4 @@ bool LoadSave(Game &GameState, const SaveData &Save) {
   GameState.CurrentMode = GameMode::Title;
   return true;
 }
-} // namespace Rally
+} // namespace GravelByte

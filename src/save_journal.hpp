@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace Rally {
+namespace GravelByte {
 // One independently validated page per sector. Never erase the selected slot.
 struct SaveSlot {
   uint32_t Magic, Sequence;
@@ -52,4 +52,4 @@ inline SaveResult StoreSave(const SaveData &Data, const SaveSlot &FirstSlot,
   return ValidSlot(Stored) && std::memcmp(&Stored, &Next, sizeof(Next)) == 0 ? SaveResult::Saved
                                                                              : SaveResult::Failed;
 }
-} // namespace Rally
+} // namespace GravelByte

@@ -6,8 +6,8 @@
 
 // An XZ barycentric query detects terrain folded over the drivable road,
 // independently of the renderer's depth test or its camera projection.
-static float TriangleHeight(Rally::Vector3 Position, Rally::Vector3 FirstVertex,
-                            Rally::Vector3 SecondVertex, Rally::Vector3 ThirdVertex) {
+static float TriangleHeight(GravelByte::Vector3 Position, GravelByte::Vector3 FirstVertex,
+                            GravelByte::Vector3 SecondVertex, GravelByte::Vector3 ThirdVertex) {
   float Difference = (SecondVertex.CoordinateZ - ThirdVertex.CoordinateZ) *
                          (FirstVertex.CoordinateX - ThirdVertex.CoordinateX) +
                      (ThirdVertex.CoordinateX - SecondVertex.CoordinateX) *
@@ -30,7 +30,7 @@ static float TriangleHeight(Rally::Vector3 Position, Rally::Vector3 FirstVertex,
              : -std::numeric_limits<float>::infinity();
 }
 int main() {
-  using namespace Rally;
+  using namespace GravelByte;
   Game GameState;
   int Samples = 0;
   for (int Track = 0; Track < TrackCount; ++Track) {

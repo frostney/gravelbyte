@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    clang-tidy:
+      glob: ['*.cpp', '*.hpp', '*.h', '.clang-tidy', '.clang-format', 'CMakeLists.txt', 'cmake/*.cmake', 'tools/check_cpp.py', 'lefthook.yml']
+      run: python3 tools/check_cpp.py
+    web-format:
+      glob: '*.{js,css,html,json}'
+      run: npm run format:web:check

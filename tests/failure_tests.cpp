@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-using namespace Rally;
+using namespace GravelByte;
 static void Check(bool Passed, const char *Description) {
   if (!Passed) {
     std::fprintf(stderr, "FAIL: %s\n", Description);

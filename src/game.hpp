@@ -3,7 +3,7 @@
 #include <array>
 #include <cstdint>
 
-namespace Rally {
+namespace GravelByte {
 constexpr int FramebufferWidth = 120, FramebufferHeight = 120, NodeCount = 301;
 constexpr float TrackSegmentLength = 6.0f, RoadHalfWidth = 4.1f;
 constexpr int SectorCount = 5;
@@ -76,7 +76,7 @@ struct Game {
   float SplitMessage = 0, SplitDelta = 0;
   std::array<float, SectorCount> Splits{}, BestSplits{}, ReferenceSplits = DefaultSplits;
   int SplitCount = 0, Jumps = 0;
-  bool Airborne = false, SurfaceAvailable = true;
+  bool Airborne = false, SurfaceAvailable = true, StartHeld = true;
   int Segment = 0, Furthest = 0, Recoveries = 0;
   GameMode CurrentMode = GameMode::Title, ResumeMode = GameMode::Racing;
   bool NewRecord = false, SaveRequested = false;
@@ -226,4 +226,4 @@ struct Renderer {
   void DrawCenteredText(int CoordinateY, const char *Value, uint16_t SurfaceColor, int Scale = 1);
 };
 uint16_t MakeColor(int RedComponent, int GreenComponent, int BlueComponent);
-} // namespace Rally
+} // namespace GravelByte

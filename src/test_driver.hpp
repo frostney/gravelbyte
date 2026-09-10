@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace Rally {
+namespace GravelByte {
 // Shared by host course tests and the optional hardware benchmark firmware.
 // It only supplies public driving inputs; it cannot move the car or finish a run.
 inline DrivingInput CalculateDrivingInput(const Game &GameState) {
@@ -45,4 +45,4 @@ inline DrivingInput TestDriver(const Game &GameState) {
   }
   return CalculateDrivingInput(GameState);
 }
-} // namespace Rally
+} // namespace GravelByte
