@@ -123,3 +123,42 @@ test('gamepad activation and storage denied fallback', async ({ page }) => {
   await button(1);
   await expect(game).toHaveAttribute('data-mode', '1');
 });
+
+for (const [width, height, touch] of [
+  [1366, 768, false],
+  [1280, 720, false],
+  [390, 844, true],
+  [375, 667, true],
+  [844, 390, true],
+]) {
+  test(`game and instructions fit without scrolling at ${width}x${height}`, async ({ browser }) => {
+    const context = await browser.newContext({
+      viewport: { width, height },
+      hasTouch: touch,
+      isMobile: touch,
+    });
+    const page = await context.newPage();
+    await play(page);
+    for (const selector of ['#game', '.toolbar', '#controls', '#save-status', '.install']) {
+      await expect(page.locator(selector)).toBeInViewport({ ratio: 1 });
+    }
+    expect(
+      await page.evaluate(() => ({
+        horizontal: document.documentElement.scrollWidth > innerWidth,
+        vertical: document.documentElement.scrollHeight > innerHeight,
+      })),
+    ).toEqual({ horizontal: false, vertical: false });
+    const game = await page.locator('#game').boundingBox();
+    expect(game.width).toBeGreaterThanOrEqual(280);
+    expect(game.height).toBeCloseTo(game.width);
+    await expect(page.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
+      'href',
+      'https://github.com/frostney/gravelbyte',
+    );
+    await expect(page.getByRole('link', { name: 'Download for PicoSystem' })).toHaveAttribute(
+      'href',
+      'gravelbyte.uf2',
+    );
+    await context.close();
+  });
+}
