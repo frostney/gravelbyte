@@ -1,52 +1,53 @@
-# Gravelbyte implementation handoff
+# Gravelbyte handoff
 
-## Scope / decisions
+## Delivered
 
-Grilling Q1-Q8 complete. User approved three cars, distinct summer/winter tracks,
-formatter, WASM, touch/keyboard/gamepad, local records and successful-main Pages
-auto-deploy. Minimal car selector: no 1/3 or 3/5 counters. New courses are
-Sunmeadow Run and Frostpine Pass. Shadow flicker is an acceptance issue.
+C++ Gravelbyte is published at https://github.com/frostney/gravelbyte and playable
+at https://frostney.github.io/gravelbyte/. Matching UF2 is linked on that page.
+The verified published player firmware is installed on the connected PicoSystem;
+USB telemetry confirms Title mode, no diagnostic auto-driving remains.
 
-Original ../picorally remains read-only and untracked. Only C++ src/tests and
-one telemetry tool imported into this newly initialized empty frostney/gravelbyte
-repository. Pascal reference remains in FemtoPascal draft PR36.
+Grilling Q1-Q8 completed. Three cars Mica/Torr/Kite; Bracken Ridge, Sunmeadow Run,
+Frostpine Pass; five splits, default targets and separate records for all nine
+pairs. Minimal car selection has unnumbered speed/acceleration/drift bars.
+Touch/keyboard/gamepad browser hints follow the active input. Browser records and
+selections persist locally. Native/device legacy course3 records migrate to Torr.
+C++ clang-format23.1.0 and web Prettier3.9.6 are pinned and enforced in CI.
 
-## Implemented
+## Validation / measured limits
 
-Three cars (Mica/Torr/Kite), three active-generated courses, 9 record/target sets,
-legacy migration, menu flow, platform hints, minimal stat bars, seasonal terrain,
-localized ice. Emscripten bridge, responsive static site, browser localStorage,
-multi-pointer touch and gamepad. Pinned formatter and CI/Pages workflow.
-ImageGen reference and exact prompt retained.
+Native Release and ASan/UBSan tests pass: all nine public-input complete drives,
+terrain clearance, record corruption/migration/isolation, shadow coverage and
+nearby winter tree visibility. Browser CI covers keyboard, gamepad, multitouch,
+pause/resume, reload and denied storage. Hosted keyboard play and desktop/mobile
+layout checked manually; no physical phone or external gamepad testing claimed.
 
-## Current work
+Device evidence: 36,877 racing frames over all nine car/course combinations,
+39.50fps weighted mean, worst25.342ms, zero sub30frames/recoveries/dropped geometry
+in accepted runs. Six dry-course runs at d031f4b; three winter runs repeated at
+0e08624 after changes confined to winter vegetation. Full detail and hashes in
+docs/validation.md and docs/device-results.json. 30fps minimum met; 50fps remains
+an open target. Do not claim hardware50fps from host or screenshot measurements.
 
-Native Release, ASan/UBSan, browser visual QA and CI browser integration pass.
-Site is live at https://frostney.github.io/gravelbyte/. CI builds browser and
-UF2 together using pinned Arm15.3.Rel1, Emscripten4.0.23, Pico SDK2.2.0 and
-PicoSystem revision9a26b2a. C++ clang-format23.1.0 and web Prettier3.9.6 checked.
+The shadow is a clipped material mask shaded per scanline on original ground
+triangles, avoiding both coplanar flicker and projected T-junction cracks.
+Winter uses full nearby conifers, conservative offscreen rejection and light
+camera-facing two-tier geometry beyond84m. Roads and terrain remain 3D.
 
-Final shadow shades original ground triangles with a clipped material mask;
-scanline mask intervals avoid per-pixel polygon tests and overlapping surfaces.
-First six dry-course hardware runs passed: ~39.5fps, no sub30frames/recoveries.
-output/hardware-dry-courses.log retains these six and an obsolete winter baseline;
-only track<2 entries are final for that file. Initial winter path missed refresh.
-Winter now uses full nearby trees, conservative offscreen rejection, and light
-camera-facing two-tier models beyond84m. New winter3-car runs are in
-output/hardware-winter.log. Do not mix superseded baseline winter results in.
+## Build / local evidence
+
+CI pins Arm GNU15.3.Rel1/GCC15.3.1, Emscripten4.0.23 and both Pico SDK revisions.
+Implementation CI/deployment: actions run34455644523, commit0e08624. Later evidence
+and documentation commits contain no further game changes.
+Local SDKs/ARM tools: ~/Library/Caches/picorally.
+Emscripten: ~/Library/Caches/gravelbyte/emsdk (source emsdk_env.sh in each shell).
+Local benchmark build caches GRAVELBYTE_BENCHMARK_START=6 for winter reruns;
+set0 to run all nine. Normal build uses GRAVELBYTE_BENCHMARK=OFF.
 
 Verified full pre-flash backup: output/backups/before-gravelbyte.uf2
 SHA256 a05beb5195f6715e3195aaf72a72241e09b9b82a9c53d30d3060978f751b8ed5.
-Keep backup/receipts. Device currently runs diagnostic firmware; restore player
-firmware after measurements. Telemetry port /dev/cu.usbmodem1101.
-SDKs and ARM15.3.1 toolchain under ~/Library/Caches/picorally.
-Emscripten4.0.23 under ~/Library/Caches/gravelbyte/emsdk; source env EACH shell.
-Local benchmark build is configured GRAVELBYTE_BENCHMARK_START=6 for winter only.
-
-Local web server8173 serves build-web/site. Browser bindings browser/tab(local)
-and live(hosted). Mobile viewport reset after QA. Browser selection persistence,
-keyboard, pause/resume checked manually; CI covers touch contacts and gamepads.
-
-Next: finish winter device checks, latest CI/Pages verification, restore and verify
-player UF2 on hardware, update validation evidence and this handoff. No 50fps claim;
-the SDK's display cadence is ~39.5fps. Original ../picorally remains unchanged.
+Keep backups and all raw logs. Dry evidence: output/hardware-dry-courses.log
+(track<2 final; winter entries there are obsolete). Final winter evidence:
+output/hardware-winter.log. Player receipt: output/player-restored.log and
+output/player-flash.log. Published UF2/manifest: output/release/.
+Source ../picorally remains unchanged. Pascal reference remains in FemtoPascal PR36.

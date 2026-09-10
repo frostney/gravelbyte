@@ -1,0 +1,112 @@
+{
+  "date": "2026-09-10",
+  "platform": "PicoSystem RP2040, official SDK default clocks",
+  "compiler": "Arm GNU 15.3.Rel1 (GCC 15.3.1)",
+  "frames": 36877,
+  "weighted_fps": 39.501,
+  "dry_source": "d031f4ba0ea925c241da0429e4ef5311e03df897",
+  "winter_source": "0e08624e8ad543b826af7be80524348472b29c84",
+  "dry_firmware_sha256": "f4a6ef0a15a8c804fff4b0bb486bed143a0975b7ec525fa49a05bbbd1930ad33",
+  "winter_firmware_sha256": "18552ee883e0709880e6ff8ffaca4fdcfc68a7d8d3c52aee11a930e9c31d6e9d",
+  "runs": [
+    {
+      "track": 0,
+      "car": 0,
+      "frames": 4195,
+      "mean_us": 25315,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106210,
+      "dropped": 0
+    },
+    {
+      "track": 0,
+      "car": 1,
+      "frames": 4358,
+      "mean_us": 25318,
+      "max_us": 25342,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 110353,
+      "dropped": 0
+    },
+    {
+      "track": 0,
+      "car": 2,
+      "frames": 4222,
+      "mean_us": 25309,
+      "max_us": 25333,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106870,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 0,
+      "frames": 3645,
+      "mean_us": 25311,
+      "max_us": 25333,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92273,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 1,
+      "frames": 3785,
+      "mean_us": 25316,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 95835,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 2,
+      "frames": 3670,
+      "mean_us": 25316,
+      "max_us": 25335,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92925,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 0,
+      "frames": 4210,
+      "mean_us": 25318,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106605,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 1,
+      "frames": 4457,
+      "mean_us": 25318,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 112861,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 2,
+      "frames": 4335,
+      "mean_us": 25319,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 109777,
+      "dropped": 0
+    }
+  ]
+}
