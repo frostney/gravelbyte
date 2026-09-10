@@ -3,6 +3,7 @@
 #include "hardware/sync.h"
 #include "pico/stdlib.h"
 #include "picosystem.hpp"
+#include "save_journal.hpp"
 #include <cstdio>
 #include <cstring>
 #if defined(GRAVELBYTE_BENCHMARK) || defined(GRAVELBYTE_SMOKE)
@@ -15,52 +16,69 @@ static uint32_t last_us = 0, last_report = 0, last_sound_us = 0;
 static uint32_t frames = 0, slow_frames = 0, max_frame = 0, max_draw = 0;
 static uint64_t total_frame = 0;
 static bool diagnostics = false;
+static rally::GeometryTelemetry race_geometry;
 [[maybe_unused]] static unsigned verified_saves = 0;
 alignas(4) static uint16_t second_frame[rally::W * rally::H];
 static uint16_t *back_frame = second_frame;
 static uint32_t last_render_us = 0;
 static void render_back_frame();
-// PicoSystem's linker caps the application at 12MiB. The final flash sector is
-// outside the firmware image and is only touched when a best time improves.
+// Both journal sectors are beyond the SDK's 12MiB application limit.
 static_assert(PICO_FLASH_SIZE_BYTES == 16 * 1024 * 1024,
               "Build for pimoroni_picosystem: saves require its 16 MiB flash");
 static constexpr uint32_t SaveOffset = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
-static uint8_t save_page[((sizeof(rally::SaveData) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) *
-                         FLASH_PAGE_SIZE];
-[[maybe_unused]] static void persist_best() {
-  if (!game.save_requested)
-    return;
+static constexpr uint32_t JournalOffset = SaveOffset - FLASH_SECTOR_SIZE;
+alignas(4) static uint8_t save_page[FLASH_PAGE_SIZE];
+static const rally::SaveSlot &save_slot(int index) {
+  return *reinterpret_cast<const rally::SaveSlot *>(XIP_BASE + JournalOffset +
+                                                    index * FLASH_SECTOR_SIZE);
+}
+static void write_slot(int target, const rally::SaveSlot &slot) {
   std::memset(save_page, 0xff, sizeof(save_page));
-  auto record = rally::encode_save(game);
-  const auto *existing = reinterpret_cast<const rally::SaveData *>(XIP_BASE + SaveOffset);
-  if (std::memcmp(existing, &record, sizeof(record)) == 0) {
-    game.save_requested = false;
-    return;
-  }
-
-  std::memcpy(save_page, &record, sizeof(record));
-  // SDK uses core 0 only. Interrupts (including USB/audio) must not fetch from
-  // XIP during erase/program; Pico SDK's flash routines execute from SRAM.
+  std::memcpy(save_page, &slot, sizeof(slot));
+  // Core 0 only; interrupts must not fetch XIP while flash runs from SRAM.
   uint32_t state = save_and_disable_interrupts();
-  flash_range_erase(SaveOffset, FLASH_SECTOR_SIZE);
-  flash_range_program(SaveOffset, save_page, sizeof(save_page));
+  flash_range_erase(JournalOffset + target * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
+  flash_range_program(JournalOffset + target * FLASH_SECTOR_SIZE, save_page, sizeof(save_page));
   restore_interrupts(state);
-  auto *stored = reinterpret_cast<const rally::SaveData *>(XIP_BASE + SaveOffset);
-  if (std::memcmp(stored, &record, sizeof(record)) == 0) {
+}
+[[maybe_unused]] static void persist_best() {
+  static uint32_t retry_at = 0;
+  const uint32_t now = picosystem::time_us();
+  if (!game.save_requested || (retry_at && int32_t(now - retry_at) < 0))
+    return;
+  const auto record = rally::encode_save(game);
+  const auto result = rally::store_save(record, save_slot(0), save_slot(1), write_slot);
+  if (result != rally::SaveResult::Failed) {
     game.save_requested = false;
-    ++verified_saves;
+    retry_at = 0;
+    if (result == rally::SaveResult::Saved) {
+      ++verified_saves;
 #ifdef GRAVELBYTE_SMOKE
-    std::printf("SAVE_OK count=%u version=%lu muted=%d\n", verified_saves,
-                (unsigned long)record.version, game.muted);
+      const int current = rally::newest_slot(save_slot(0), save_slot(1));
+      std::printf("SAVE_OK count=%u version=%lu muted=%d slot=%d sequence=%lu\n", verified_saves,
+                  (unsigned long)record.version, game.muted, current,
+                  (unsigned long)save_slot(current).sequence);
 #endif
+    }
+  } else {
+    retry_at = now + 2000000;
+    std::printf("SAVE_FAILED: previous record retained\n");
   }
 }
 void init() {
   stdio_init_all();
-  auto *saved = reinterpret_cast<const rally::SaveRecord *>(XIP_BASE + SaveOffset);
-  if (!rally::load_save(game, *reinterpret_cast<const rally::SaveData *>(saved)))
-    rally::load_best(game, *saved);
+  const int current = rally::newest_slot(save_slot(0), save_slot(1));
+  if (current >= 0) {
+    rally::load_save(game, save_slot(current).data);
+  } else {
+    const auto *saved = reinterpret_cast<const rally::SaveRecord *>(XIP_BASE + SaveOffset);
+    if (!rally::load_save(game, *reinterpret_cast<const rally::SaveData *>(saved)))
+      rally::load_best(game, *saved);
+  }
 #ifdef GRAVELBYTE_BENCHMARK
+  // Measure the normal audio workload independently of the player's saved mute
+  // preference. Benchmark firmware never persists this temporary override.
+  game.muted = false;
   game.select(GRAVELBYTE_BENCHMARK_START % 3, GRAVELBYTE_BENCHMARK_START / 3);
   game.mode = rally::Mode::Countdown;
 #endif
@@ -110,11 +128,13 @@ void update(uint32_t) {
   static uint32_t finished_at = 0;
   if (game.mode == rally::Mode::Finished && !reported) {
     std::printf("BENCHMARK_DONE track=%d car=%d frames=%lu mean_us=%lu max_us=%lu below30=%lu "
-                "recoveries=%d time_ms=%lu dropped=%d\n",
+                "recoveries=%d time_ms=%lu dropped=%lu overflow_frames=%lu rendered_frames=%lu "
+                "audio=%d\n",
                 game.selected_track, game.selected_car, (unsigned long)frames,
                 (unsigned long)(frames ? total_frame / frames : 0), (unsigned long)max_frame,
                 (unsigned long)slow_frames, game.recoveries, (unsigned long)(game.elapsed * 1000),
-                renderer.dropped);
+                (unsigned long)race_geometry.dropped, (unsigned long)race_geometry.overflow_frames,
+                (unsigned long)race_geometry.frames, !game.muted);
     reported = true;
     finished_at = now;
   }
@@ -123,6 +143,7 @@ void update(uint32_t) {
     game.select(next % 3, next / 3);
     frames = slow_frames = max_frame = max_draw = 0;
     total_frame = 0;
+    race_geometry = {};
     reported = false;
     last_us = picosystem::time_us();
   }
@@ -183,6 +204,8 @@ static void render_back_frame() {
   const uint32_t started = picosystem::time_us();
   auto *pixels = back_frame;
   renderer.render(game, pixels, int(picosystem::stats.fps), diagnostics);
+  if (game.mode == rally::Mode::Racing)
+    race_geometry.observe(renderer.dropped);
   // Our shared image is RGBA4444. PicoSystem's SPI-friendly packed order is
   // G B A R (see the SDK's rgb()), so convert in-place only after rendering.
   for (int i = 0; i < rally::W * rally::H; ++i) {

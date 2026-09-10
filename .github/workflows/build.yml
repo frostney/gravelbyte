@@ -67,11 +67,7 @@ jobs:
           export PICO_SDK_PATH="$RUNNER_TEMP/pico-sdk" PICOSYSTEM_DIR="$RUNNER_TEMP/picosystem" PICO_TOOLCHAIN_PATH="$RUNNER_TEMP/arm"
           cmake -S . -B build-pico -G Ninja -DGRAVELBYTE_DEVICE=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build-pico
-          cp build-pico/gravelbyte.uf2 build-web/site/
-          printf '{"commit":"%s"}\n' "$GITHUB_SHA" > build-web/site/version.json
-          touch build-web/site/.nojekyll
-          cd build-web/site
-          sha256sum gravelbyte.uf2 gravelbyte.wasm > SHA256SUMS
+          python3 tools/package_site.py --source site --raw build-web/web-raw --output build-web/site --build-id "$GITHUB_SHA" --firmware build-pico/gravelbyte.uf2
       - uses: actions/upload-artifact@v4
         with:
           name: gravelbyte-${{ github.sha }}

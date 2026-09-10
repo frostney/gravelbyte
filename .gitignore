@@ -6,3 +6,6 @@ output/
 node_modules/
 test-results/
 playwright-report/
+
+# Local task state
+.agent/HANDOFF.md

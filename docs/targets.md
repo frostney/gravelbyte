@@ -1,10 +1,14 @@
 # Target calibration
 
 Host Release build, public-input test driver, fixed 20ms frames. Every run
-finishes all five splits without recovery. Easy targets allow 8%, Standard 2.4%,
-Expert 1.5% over its own completed drive. Standard/Bracken retains the original
+finishes all five splits without recovery. Mica/Easy targets now allow about 24%, Standard 2.4%,
+Expert 1.5% over its own completed drive. The Easy allowance increased after the
+player reported being unable to beat any stage. It is a provisional first-win
+adjustment, not a substitute for timed human playtests. Standard/Bracken retains the original
 113s target and unchanged physics/course for version 3 record compatibility.
-These are approachable reference runs, not theoretical world records.
+These are automated reference runs with exact bend knowledge. Their completion
+does not establish human approachability. The timings below are the original
+calibration runs; current tests must beat each actual target.
 
 ```text
 track=0 car=0 mode=6 time=106.27 segment=297 recoveries=0 max_lateral=3.43 max_triangles=1106

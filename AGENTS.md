@@ -12,4 +12,5 @@ racing; only full-course device telemetry can establish hardware performance.
 Before flashing identify the device and make and verify a full flash backup.
 Keep benchmark firmware separate from player firmware and restore the latter.
 
-Keep reference art and its prompt. Update .agent/HANDOFF.md before ending work.
+Keep reference art and its prompt. Update .agent/HANDOFF.md before ending work. Keep that file local and ignored;
+never add it to Git.

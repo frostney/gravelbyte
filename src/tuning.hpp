@@ -10,6 +10,7 @@ constexpr int NearPlane = 42, FarPlane = 170 * WorldScale, FocalLength = 85;
 constexpr int CenterX = 60, CenterY = 53, DepthNumerator = 2097152;
 constexpr int VertexCacheSize = 512, FaceCapacity = 1800, ShadowCapacity = 64, RidgeSamples = 512;
 constexpr int RoadBehind = 5, RoadAhead = 24;
+constexpr int SnowRoadAhead = 20;
 constexpr float ChaseDistance = 7.5f, ChaseHeight = 3.6f, ShowroomDistance = 5.f;
 constexpr float ShowroomHeight = 2.5f, RoadsideHeight = 2.5f, RoadsideMinimumHeight = 3.5f;
 constexpr float RoadsideOffset = 2.f, HighShotBack = 13.f, HighShotOffset = 5.f,
@@ -29,6 +30,7 @@ constexpr float RailMargin = .8f, CarClearance = .95f, TunnelHeight = 6.5f;
 constexpr float RiverDrop = 7.f, BeachDrop = 2.f;
 constexpr int ChasePitchSine = 3213, ChasePitchCosine = 16066;
 constexpr float SceneryDetailDistance = 72.f;
+constexpr float SnowSceneryDetailDistance = 48.f;
 constexpr int StatsTop = 84, StatsRow = 8, StatBars = 5;
 constexpr unsigned SaveMagic = 0x4752564c, SaveVersion = 2, MutedFlag = 0x100;
 constexpr unsigned SelectionMask = 0xff, FnvOffset = 2166136261u, FnvPrime = 16777619u;
@@ -48,6 +50,7 @@ constexpr float CameraJumpRise = .4f, TreeCollisionRadiusSquared = 2.f, TreeClea
 constexpr float TreeBounce = -.12f, TreeImpact = .7f, StrandedDistance = 22.f;
 constexpr float StrandedSpeed = 1.2f, RecoveryDelay = 2.5f, RecoveryDistance = 45.f;
 constexpr float RecoveryPenalty = 3.f, MessageSeconds = 2.5f;
+constexpr float OffroadStep = .12f, MaxBankSlope = 1.5f, MaxSupportSpeed = 12.f;
 } // namespace rally::tuning::physics
 namespace rally::tuning::audio {
 constexpr unsigned UpdateUs = 50000, SampleRate = 22050;
