@@ -13,7 +13,13 @@ not a substitute for PicoSystem telemetry or physical touchscreen/gamepad testin
   foreground occlusion. Shadows use the original ground triangles' depth.
 - Browser integration covers keyboard, emulated touch contacts, standard-gamepad
   input, active-input hints, pause/resume, selection persistence and denied storage.
-- Full device telemetry and hosted CI/deployment results are being collected.
+- Native Release and AddressSanitizer/UndefinedBehaviorSanitizer checks pass.
+- CI and Pages deployment passed for the browser/input/persistence implementation.
+- The six dry-course device races completed at about 39.5fps with zero frames
+  below 30fps. Revised winter geometry is undergoing its three complete runs.
+- Winter trees use conservative visibility rejection, camera-facing distant
+  branch tiers beyond 84m and full nearby models. Visibility tests retain the
+  complete nearby silhouettes from low, normal and elevated viewpoints.
 
 ## Shadow investigation
 

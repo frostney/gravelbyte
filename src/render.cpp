@@ -265,6 +265,50 @@ void Renderer::tree(Vec p, float height, int seed) {
     triangle(d, a, tip, col);
   }
 }
+void Renderer::snow_tree(Vec p, float height, int seed) {
+  box(p, {.36f, height * .45f, .36f}, 0, color(4, 4, 3));
+  for (int tier = 0; tier < 2; ++tier) {
+    float y = height * (tier ? .38f : .16f), r = height * (tier ? .24f : .33f);
+    Vec tip = p + Vec{0, height * (tier ? 1.f : .77f), 0};
+    Vec a = p + Vec{-r, y, -r}, b = p + Vec{r, y, -r}, c = p + Vec{r, y, r}, d = p + Vec{-r, y, r};
+    uint16_t col = color(2 + seed % 2, 4 + seed % 3, 3 + seed % 2);
+    // Close the underside when viewed from below a branch tier. The original
+    // double-sided open pyramid used its back faces to cover this silhouette.
+    if (camera.y < p.y + y)
+      quad(a, b, c, d, shade(col, -2));
+    // Exact pyramid face normals: retain every camera-facing face, including
+    // all four when looking down from above. Hidden faces cannot affect colour.
+    const float rise = tip.y - (p.y + y), threshold = (tip.y - camera.y) * r;
+    const float x = (camera.x - p.x) * rise, z = (camera.z - p.z) * rise;
+    if (-z >= threshold)
+      triangle(a, b, tip, shade(col, -1));
+    if (x >= threshold)
+      triangle(b, c, tip, col);
+    if (z >= threshold)
+      triangle(c, d, tip, shade(col, 1));
+    if (-x >= threshold)
+      triangle(d, a, tip, col);
+  }
+}
+// Beyond 84m the two branch tiers occupy only a handful of pixels. Keep that
+// silhouette and the snow cap with camera-facing world geometry, avoiding the
+// hidden volume work. Nearby conifers retain the full 3D model.
+void Renderer::distant_snow_tree(Vec p, float height, int seed) {
+  const Vec right = {cam_cos, 0, -cam_sin};
+  const float breadth = std::abs(cam_cos) + std::abs(cam_sin);
+  const uint16_t leaves = color(2 + seed % 2, 4 + seed % 3, 3 + seed % 2);
+  quad(p - right * .18f, p + right * .18f, p + right * .18f + Vec{0, height * .45f, 0},
+       p - right * .18f + Vec{0, height * .45f, 0}, color(4, 4, 3));
+  triangle(p - right * (height * .33f * breadth) + Vec{0, height * .16f, 0},
+           p + right * (height * .33f * breadth) + Vec{0, height * .16f, 0},
+           p + Vec{0, height * .77f, 0}, leaves);
+  Vec left = p - right * (height * .24f * breadth) + Vec{0, height * .38f, 0},
+      edge = p + right * (height * .24f * breadth) + Vec{0, height * .38f, 0},
+      tip = p + Vec{0, height, 0};
+  Vec snow_left = left + (tip - left) * .7f, snow_right = edge + (tip - edge) * .7f;
+  quad(left, edge, snow_right, snow_left, leaves);
+  triangle(snow_left, snow_right, tip, color(14, 15, 15));
+}
 void Renderer::raster(const Triangle &t) {
   const ShadowPolygon *shadow = t.shadow ? &shadow_polygons[t.shadow - 1] : nullptr;
   const uint16_t shadow_color = shadow ? shade(t.color, -4) : t.color;
@@ -443,8 +487,27 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
         if (g.selected_track == 2 ||
             (g.selected_track == 0 && (zone == 0 || zone == 3 || (zone == 1 && i % 12 == 0))) ||
             (g.selected_track == 1 && i % 12 == 0)) {
-          tree(p, 5.f + float((i * 7) % 4), i);
+          const float height = 5.f + float((i * 7) % 4);
+          bool distant = false;
           if (g.selected_track == 2) {
+            const auto center = transform(p + Vec{0, height * .5f, 0});
+            const int radius = int(height * .75f * 64);
+            // Conservative sphere/plane rejection keeps complete silhouettes
+            // while avoiding geometry work for trees outside the camera view.
+            if (center.z + radius < 42 || center.z - radius > 170 * 64 ||
+                std::abs(center.x) * 85 > center.z * 60 + radius * 105 ||
+                center.y * 85 > center.z * 53 + radius * 101 ||
+                -center.y * 85 > center.z * 67 + radius * 109)
+              continue;
+            distant = center.z > 84 * 64;
+          }
+          if (distant)
+            distant_snow_tree(p, height, i);
+          else if (g.selected_track == 2)
+            snow_tree(p, height, i);
+          else
+            tree(p, height, i);
+          if (g.selected_track == 2 && !distant) {
             Vec top = p + Vec{0, 5.2f + float((i * 7) % 4), 0};
             triangle(top, p + Vec{-1.2f, 3.8f, 0}, p + Vec{1.2f, 3.8f, 0}, color(14, 15, 15));
           }

@@ -21,24 +21,32 @@ ImageGen reference and exact prompt retained.
 
 ## Current work
 
-Native tests / browser visual QA / nine-race PicoSystem benchmark in progress.
-Initial world-mesh shadow split caused ~50ms frames and T-junction cracks. Replaced
-with per-ground-triangle material masks; original ground geometry/depth remains.
-Final shadow path needs fresh hardware matrix after flash.
+Native Release, ASan/UBSan, browser visual QA and CI browser integration pass.
+Site is live at https://frostney.github.io/gravelbyte/. CI builds browser and
+UF2 together using pinned Arm15.3.Rel1, Emscripten4.0.23, Pico SDK2.2.0 and
+PicoSystem revision9a26b2a. C++ clang-format23.1.0 and web Prettier3.9.6 checked.
 
-Device E46024C7430C442A is connected. Full flash backup made and verified:
-output/backups/before-gravelbyte.uf2
+Final shadow shades original ground triangles with a clipped material mask;
+scanline mask intervals avoid per-pixel polygon tests and overlapping surfaces.
+First six dry-course hardware runs passed: ~39.5fps, no sub30frames/recoveries.
+output/hardware-dry-courses.log retains these six and an obsolete winter baseline;
+only track<2 entries are final for that file. Initial winter path missed refresh.
+Winter now uses full nearby trees, conservative offscreen rejection, and light
+camera-facing two-tier models beyond84m. New winter3-car runs are in
+output/hardware-winter.log. Do not mix superseded baseline winter results in.
+
+Verified full pre-flash backup: output/backups/before-gravelbyte.uf2
 SHA256 a05beb5195f6715e3195aaf72a72241e09b9b82a9c53d30d3060978f751b8ed5.
-Keep backup and receipts. Current device runs diagnostic firmware; restore player
+Keep backup/receipts. Device currently runs diagnostic firmware; restore player
 firmware after measurements. Telemetry port /dev/cu.usbmodem1101.
 SDKs and ARM15.3.1 toolchain under ~/Library/Caches/picorally.
-Emscripten4.0.23 installed at ~/Library/Caches/gravelbyte/emsdk; source its env
-for EVERY shell invocation (system Python otherwise too old for emcc).
+Emscripten4.0.23 under ~/Library/Caches/gravelbyte/emsdk; source env EACH shell.
+Local benchmark build is configured GRAVELBYTE_BENCHMARK_START=6 for winter only.
 
-Local web server port8173 serves build-web/site. Node browser binding browser,
-tab in current REPL. Browser selection restores Kite/Frostpine after reload;
-keyboard, pause/resume and screenshots checked. Read browser skill before QA.
+Local web server8173 serves build-web/site. Browser bindings browser/tab(local)
+and live(hosted). Mobile viewport reset after QA. Browser selection persistence,
+keyboard, pause/resume checked manually; CI covers touch contacts and gamepads.
 
-Next: finish native shadow tests, flash material-mask benchmark, run CI browser
-suite, publish tested Pages with matching UF2, full device results, restore player,
-update docs/handoff. Do not claim 50fps or complete delivery from host tests.
+Next: finish winter device checks, latest CI/Pages verification, restore and verify
+player UF2 on hardware, update validation evidence and this handoff. No 50fps claim;
+the SDK's display cadence is ~39.5fps. Original ../picorally remains unchanged.

@@ -52,7 +52,7 @@ void init() {
   if (!rally::load_save(game, *reinterpret_cast<const rally::SaveData *>(saved)))
     rally::load_best(game, *saved);
 #ifdef GRAVELBYTE_BENCHMARK
-  game.select(0, 0);
+  game.select(GRAVELBYTE_BENCHMARK_START % 3, GRAVELBYTE_BENCHMARK_START / 3);
   game.mode = rally::Mode::Title;
 #endif
   last_us = picosystem::time_us();

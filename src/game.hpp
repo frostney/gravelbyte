@@ -150,6 +150,8 @@ struct Renderer {
   void quad(Vec a, Vec b, Vec c, Vec d, uint16_t color);
   void box(Vec p, Vec size, float yaw, uint16_t color);
   void tree(Vec p, float height, int seed);
+  void snow_tree(Vec p, float height, int seed);
+  void distant_snow_tree(Vec p, float height, int seed);
   void raster(const Triangle &triangle);
   void rect(int x, int y, int w, int h, uint16_t color);
   void text(int x, int y, const char *value, uint16_t color, int scale = 1);

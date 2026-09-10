@@ -103,7 +103,8 @@ tests cannot establish device performance. See [validation](docs/validation.md)
 for measured results and [target calibration](docs/targets.md) for reference runs.
 
 `-DGRAVELBYTE_BENCHMARK=ON` builds an automated nine-race device diagnostic that
-never writes records. Restore the player build after benchmarking. Never flash
+never writes records. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
+course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
 
 [Reference art](assets/reference/car-track-reference.png) and its exact
