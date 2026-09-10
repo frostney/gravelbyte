@@ -1,0 +1,129 @@
+{
+  "date": "2026-09-10",
+  "platform": "PicoSystem RP2040, SDK 250MHz system clock",
+  "compiler": "Arm GNU 15.3.Rel1 (GCC 15.3.1)",
+  "source": "b431636a8df6926efd5e41b137c3558091be5ea3",
+  "firmware_sha256": "483c04768cab36d7b6dfdd7bc9593ab50613880feb92bfc652033b941be26cb3",
+  "frames": 36867,
+  "weighted_fps": 39.496,
+  "runs": [
+    {
+      "track": 0,
+      "car": 0,
+      "frames": 4191,
+      "mean_us": 25316,
+      "max_us": 25345,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106116,
+      "dropped": 0
+    },
+    {
+      "track": 0,
+      "car": 1,
+      "frames": 4359,
+      "mean_us": 25316,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 110370,
+      "dropped": 0
+    },
+    {
+      "track": 0,
+      "car": 2,
+      "frames": 4221,
+      "mean_us": 25317,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106881,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 0,
+      "frames": 3645,
+      "mean_us": 25317,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92294,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 1,
+      "frames": 3784,
+      "mean_us": 25318,
+      "max_us": 25343,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 95820,
+      "dropped": 0
+    },
+    {
+      "track": 1,
+      "car": 2,
+      "frames": 3668,
+      "mean_us": 25326,
+      "max_us": 25348,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92912,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 0,
+      "frames": 4210,
+      "mean_us": 25321,
+      "max_us": 25346,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106617,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 1,
+      "frames": 4455,
+      "mean_us": 25319,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 112817,
+      "dropped": 0
+    },
+    {
+      "track": 2,
+      "car": 2,
+      "frames": 4334,
+      "mean_us": 25319,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 109751,
+      "dropped": 0
+    }
+  ],
+  "scope": "Nine complete racing runs before the later camera-only interpolation correction; final-camera device run is recorded separately.",
+  "final_camera_check": {
+    "source": "a7195bedd2752575699619769bd224f7258052e8",
+    "firmware_sha256": "19e70940cb8ad1799c5f268cd99b7088be657c2c0c54f4388235fbcd2a951d5e",
+    "run": {
+      "track": 2,
+      "car": 2,
+      "frames": 4333,
+      "mean_us": 25326,
+      "max_us": 25347,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 109753,
+      "dropped": 0
+    },
+    "playback_samples": 11,
+    "playback_sample_max_tick_us": 25333,
+    "scope": "One complete final-source winter race and sampled post-finish playback. Playback samples do not count every frame."
+  }
+}
