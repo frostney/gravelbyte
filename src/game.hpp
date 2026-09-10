@@ -56,6 +56,7 @@ static_assert(sizeof(ReplayPose) == 12);
 struct Game {
   std::array<Node, NodeCount> road{};
   std::array<std::array<Vec, 10>, NodeCount> terrain{};
+  std::array<std::array<Vec, 5>, tuning::MountainSections + 1> mountain{};
   Vec car{}, velocity{};
   float yaw = 0, camera_yaw = 0, speed = 0, steer = 0, lateral = 0, route_t = 0;
   float elapsed = 0, countdown = 3, best = 0, previous_best = 0;
@@ -177,6 +178,7 @@ struct Renderer {
   void box(Vec p, Vec size, float yaw, uint16_t color);
   void tree(Vec p, float height, int seed);
   void snow_tree(Vec p, float height, int seed);
+  void palm_tree(Vec p, float height, int seed);
   void distant_snow_tree(Vec p, float height, int seed, bool snow = true);
   void raster(const Triangle &triangle);
   void rect(int x, int y, int w, int h, uint16_t color);

@@ -12,9 +12,10 @@ replays the actual drive, with the records panel hidden initially. X/Space/Recor
 shows five cumulative gate deltas against the default target and the prior best.
 A retries; B returns to the existing track selector. Taglines are removed.
 
-Bracken Ridge has a river bridge and solid rails. Sunmeadow Run has a beach and
+Bracken Ridge has a river bridge and solid rails. Sunmeadow Run follows a sandy beach throughout, with palms, low inland dunes and
 water alongside the road, retaining ordinary off-road consequences. Frostpine
-Pass has snowy mountains and a tunnel with solid walls. The existing road
+Pass has a tunnel bored through a broad, snow-covered rock mountain. Its portal
+faces leave the road open, and its slopes stay within the local road corridor. The existing road
 centerlines and car tuning are retained; structure collisions are local additions.
 
 ## Implementation boundaries
@@ -30,6 +31,8 @@ to viewing direction. Tunnel approaches use a chase shot to keep the camera clea
 of the structure. Bridge roadside shots stay above deck height. Nearby trees use
 full 3D visible faces; distant trees switch to lighter geometry at 72m. The road
 view extends 24 nodes ahead, retaining the 3D road and original simulation.
+The tunnel mountain uses four broad longitudinal sections with 300 bytes of
+precomputed vertices; its detailed interior follows every original road node.
 
 Reusable tuning values live in `src/tuning.hpp`. Authored bends, geometry vertices,
 car profiles and target times remain data rather than unrelated global constants.

@@ -13,7 +13,7 @@ Choose a car, pick a course and beat five split times across a 1.8km stage.
 | Kite | Expert | Faster, lower coupe with more lateral slip |
 
 Bracken Ridge crosses a river bridge through the forest. Sunmeadow Run follows
-sandy beaches and coastal water. Frostpine Pass winds through snowy mountains
+a palm-lined sandy beach beside coastal water. Frostpine Pass winds through snowy mountains
 and a tunnel, with visible blue ice reducing traction. Every car/course pair has its own default target
 and personal record. Higher DRIFT means the car slides more readily.
 

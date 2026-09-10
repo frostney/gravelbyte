@@ -273,6 +273,25 @@ void Renderer::tree(Vec p, float height, int seed) {
     triangle(d, a, tip, col);
   }
 }
+void Renderer::palm_tree(Vec p, float height, int seed) {
+  // A leaning trunk and broad, drooping fronds give a readable palm silhouette
+  // at 120 pixels. Fixed world-space leaves work in every cinematic view.
+  const float lean = (seed % 2 ? 1.f : -1.f) * tuning::PalmLean;
+  const Vec crown = p + Vec{lean, height, .35f};
+  const Vec trunk = {tuning::PalmTrunkWidth, 0, 0};
+  const Vec depth = {0, 0, tuning::PalmTrunkWidth};
+  quad(p - trunk, p + trunk, crown + trunk, crown - trunk, color(8, 6, 3));
+  quad(p - depth, p + depth, crown + depth, crown - depth, color(6, 4, 2));
+  const Vec directions[] = {{1, 0, .3f}, {-.3f, 0, 1}, {-1, 0, -.3f}, {.3f, 0, -1}};
+  for (int leaf = 0; leaf < 4; ++leaf) {
+    Vec along = directions[leaf], across = {-along.z, 0, along.x};
+    Vec mid = crown + along * (tuning::PalmCrownRadius * .5f) + Vec{0, .35f, 0};
+    Vec tip = crown + along * tuning::PalmCrownRadius - Vec{0, 1.2f, 0};
+    Vec left = mid - across * .65f, right = mid + across * .65f;
+    triangle(crown, left, tip, color(3, 8 + leaf % 2, 3));
+    triangle(crown, tip, right, color(2, 6 + leaf % 2, 2));
+  }
+}
 void Renderer::snow_tree(Vec p, float height, int seed) {
   box(p, {.36f, height * .45f, .36f}, 0, color(4, 4, 3));
   for (int tier = 0; tier < 2; ++tier) {
@@ -505,6 +524,30 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
   const int ahead = reverse_view ? tuning::RoadBehind : tuning::RoadAhead;
   const int first = std::max(0, g.segment - behind),
             last = std::min(NodeCount - 1, g.segment + ahead);
+  if (!showroom && g.selected_track == 2 && last >= tuning::TunnelStart &&
+      first <= tuning::TunnelEnd) {
+    // Broad, cached rock/snow panels enclose the detailed tunnel interior.
+    for (int k = 0; k < tuning::MountainSections; ++k) {
+      const auto &a = g.mountain[k], &b = g.mountain[k + 1];
+      quad(a[0], b[0], b[1], a[1], color(7, 8, 10));
+      quad(a[1], b[1], b[2], a[2], color(11, 13, 14));
+      quad(a[2], b[2], b[3], a[3], color(14, 15, 15));
+      quad(a[3], b[3], b[4], a[4], color(7, 8, 10));
+    }
+    for (int k : {0, tuning::MountainSections}) {
+      int node = k == 0 ? tuning::TunnelStart : tuning::TunnelEnd;
+      const auto &ring = g.mountain[k];
+      for (int sign : {-1, 1}) {
+        Vec bottom = g.roadside(node, sign * (g.road[node].half_width + tuning::RailMargin));
+        Vec top = bottom + Vec{0, tuning::TunnelHeight, 0};
+        Vec outer = ring[sign < 0 ? 0 : 4], shoulder = ring[sign < 0 ? 1 : 3];
+        quad(outer, bottom, top, shoulder, color(7, 8, 9));
+        triangle(shoulder, top, ring[2], color(10, 11, 12));
+        Vec center = g.road[node].p + Vec{0, tuning::TunnelHeight, 0};
+        triangle(top, center, ring[2], color(12, 13, 14));
+      }
+    }
+  }
   for (int i = first; !showroom && i < last; ++i) {
     shadow_enabled = std::abs(i - g.segment) <= 2;
     auto at = [&](int j, float side, float rise = 0.f) {
@@ -515,8 +558,8 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
     const uint16_t gravels[] = {color(9, 9, 7), color(10, 9, 7), color(8, 8, 8), color(8, 8, 6)};
     uint16_t grass = grasses[zone], roadcol = gravels[zone];
     if (g.selected_track == 1) {
-      grass = color(9, 9 - zone % 2, 4);
-      roadcol = color(12, 10, 7);
+      grass = color(14, 12, 8);
+      roadcol = color(12, 10, 6);
     }
     if (g.bridge(i))
       roadcol = color(8, 7, 5);
@@ -552,7 +595,7 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
         Vec p = g.scenery(i, sign);
         if (g.selected_track == 2 ||
             (g.selected_track == 0 && (zone == 0 || zone == 3 || (zone == 1 && i % 12 == 0))) ||
-            (g.selected_track == 1 && i % 12 == 0)) {
+            (g.selected_track == 1 && i % 6 == 0)) {
           const float height = 5.f + float((i * 7) % 4);
           bool distant = false;
           {
@@ -568,7 +611,9 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
               continue;
             distant = center.z > tuning::SceneryDetailDistance * tuning::WorldScale;
           }
-          if (distant)
+          if (g.selected_track == 1)
+            palm_tree(p, height, i);
+          else if (distant)
             distant_snow_tree(p, height, i, g.selected_track == 2);
           else
             snow_tree(p, height, i);
@@ -611,11 +656,6 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
         Vec c = at(i + 1, g.road[i + 1].half_width + tuning::RailMargin, tuning::TunnelHeight);
         Vec d = at(i + 1, -g.road[i + 1].half_width - tuning::RailMargin, tuning::TunnelHeight);
         quad(a, b, c, d, color(4, 5, 6));
-        // Roof and snow-capped shoulders leave the full road corridor open.
-        Vec ridge = g.road[i].p + Vec{0, tuning::TunnelHeight + 4.f, 0};
-        Vec next_ridge = g.road[i + 1].p + Vec{0, tuning::TunnelHeight + 4.f, 0};
-        quad(a, d, next_ridge, ridge, color(11, 12, 14));
-        quad(b, c, next_ridge, ridge, color(14, 15, 15));
         if (i % 3 == 0) {
           Vec lamp = at(i, 0, tuning::TunnelHeight - .12f);
           box(lamp, {1.2f, .06f, .5f}, g.road[i].heading, color(15, 14, 9));

@@ -1,5 +1,23 @@
 # Validation
 
+## Palm beach and mountain tunnel update
+
+The final renderer passed six native tests, six ASan/UBSan tests and three Chromium
+integration tests. Native drives cover all nine car/course combinations. Visual
+checks cover palm silhouettes, beach racing and cinematic views, and the tunnel
+approach, opening, interior and exit. Formatting checks pass.
+
+Three beach and three winter device races cover **24,104 frames**, averaging
+**39.499fps**, with a worst frame of **25.336ms**. All six have zero
+sub-30fps racing frames, recoveries and dropped geometry. The 50fps target is
+still unmet. [Measurements and exact firmware hashes](biomes-device-results.json)
+separate the beach source from the later winter-only mesh optimization. The
+initial dense mountain missed refreshes and is excluded from acceptance.
+
+The final mountain caches 300 bytes of geometry; player BSS is 232,436 bytes.
+A fresh full 16MiB backup was made and flash-verified before diagnostics.
+
+
 ## Cinematics and landmarks update
 
 The expanded update passes six native contracts, ASan/UBSan and three Chromium

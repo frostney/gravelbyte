@@ -1,3 +1,30 @@
+# Gravelbyte: palm beach and mountain tunnel
+
+Current update: feat/beach-palms-and-mountain-tunnel, game code 6dab658.
+Sunmeadow now has sand, palms, low inland dunes and seaside throughout; names
+Palm Shore, Golden Dunes, Sunstone, Tideline. Frostpine tunnel sits within a
+broad snowy rock massif, with open portal faces. Road centerlines, handling,
+targets, saves and Bracken unchanged. Fixed mountain cache adds 300 bytes.
+
+Final six native and sanitizer tests and three browser tests pass. Visual QA:
+output/qa-biomes, including final mountain approach/interior/exit. Review:
+output/review-biomes.md. Native public controls finish all nine combinations.
+Hardware: three beach runs at b0ab924 and three winter runs at 6dab658 pass:
+24,104 frames, 39.499fps, worst25.336ms, zero sub30/recoveries/dropped geometry.
+50fps remains unmet. Initial dense mountain missed refreshes; excluded from
+acceptance. See docs/biomes-device-results.json for exact hashes and source.
+Bracken was not remeasured on hardware in this update.
+
+New full verified backup: output/backups/before-beach-mountain.uf2,
+SHA256 334677443d2988dddfcb554a4584897077b0a4d0e1678c678cd8552081e5d3bb.
+Settings sector extracted and range-validated as player-settings-before-biomes.uf2.
+Normal player restored with flash verification; title-mode telemetry:
+output/biomes-player-restored.log. Settings match pre-update backup:
+output/biomes-settings-verify.log. CI/Pages publication follows existing flow;
+consult live PR/Actions for current state. Do not leave benchmark firmware.
+
+## Previous update context
+
 # Gravelbyte: cinematics and landmark update
 
 Implementation and hardware validation complete on feat/cinematics-and-landmarks.

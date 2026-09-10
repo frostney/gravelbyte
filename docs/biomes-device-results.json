@@ -1,0 +1,89 @@
+{
+  "scope": "Three beach and three winter device races. Bracken unchanged and covered by native drives; not remeasured on device.",
+  "builds": [
+    {
+      "source": "b0ab924ddf4de48f33e938fe24ca708e6cdf1b6b",
+      "benchmark_sha256": "7e9a786dc6d0b84be32462b93a2b876c3914d8ecd9a618b9e6dfbdbf6fff206e",
+      "log": "output/hardware-biomes.log",
+      "runs": [
+        {
+          "track": 1,
+          "car": 0,
+          "frames": 3645,
+          "mean_us": 25321,
+          "max_us": 25336,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 92309,
+          "dropped": 0
+        },
+        {
+          "track": 1,
+          "car": 1,
+          "frames": 3786,
+          "mean_us": 25317,
+          "max_us": 25332,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 95865,
+          "dropped": 0
+        },
+        {
+          "track": 1,
+          "car": 2,
+          "frames": 3670,
+          "mean_us": 25316,
+          "max_us": 25329,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 92923,
+          "dropped": 0
+        }
+      ]
+    },
+    {
+      "source": "6dab658d32cdb7dff44a352f6ae1caef413d7696",
+      "benchmark_sha256": "bd9d10c6d5b77a4b55eefec3ee72a86ec837c2f64d92bb55b0be02b618fde462",
+      "log": "output/hardware-biomes-mountain.log",
+      "runs": [
+        {
+          "track": 2,
+          "car": 0,
+          "frames": 4210,
+          "mean_us": 25321,
+          "max_us": 25333,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 106617,
+          "dropped": 0
+        },
+        {
+          "track": 2,
+          "car": 1,
+          "frames": 4458,
+          "mean_us": 25315,
+          "max_us": 25326,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 112871,
+          "dropped": 0
+        },
+        {
+          "track": 2,
+          "car": 2,
+          "frames": 4335,
+          "mean_us": 25314,
+          "max_us": 25329,
+          "below30": 0,
+          "recoveries": 0,
+          "time_ms": 109754,
+          "dropped": 0
+        }
+      ]
+    }
+  ],
+  "frames": 24104,
+  "weighted_fps": 39.498773477380496,
+  "worst_frame_us": 25336,
+  "target_50fps_met": false
+}
