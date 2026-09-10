@@ -11,6 +11,12 @@ constexpr int CenterX = 60, CenterY = 53, DepthNumerator = 2097152;
 constexpr int VertexCacheSize = 512, FaceCapacity = 1800, ShadowCapacity = 64, RidgeSamples = 512;
 constexpr int RoadBehind = 5, RoadAhead = 24;
 constexpr float ChaseDistance = 7.5f, ChaseHeight = 3.6f, ShowroomDistance = 5.f;
+constexpr float ShowroomHeight = 2.5f, RoadsideHeight = 2.5f, RoadsideMinimumHeight = 3.5f;
+constexpr float RoadsideOffset = 2.f, HighShotBack = 13.f, HighShotOffset = 5.f,
+                HighShotHeight = 9.f;
+constexpr float CarAimHeight = .8f;
+constexpr int ShowroomCenterY = 43, RoadsideLookAhead = 4, PortalCameraMargin = 8,
+              CameraShotCount = 3;
 constexpr float ShotSeconds = 5.f, ShowcaseSeconds = 15.f;
 constexpr std::size_t ReplayCapacity = 2048;
 constexpr float ReplayInterval = .1f, PoseScale = 64.f, AngleScale = 32767.f / Pi;

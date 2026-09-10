@@ -406,30 +406,36 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
   dropped = 0;
   depth_buffer.fill(0);
   const bool showroom = g.mode == Mode::CarSelect;
-  projection_y = showroom ? tuning::CenterY - 10 : tuning::CenterY;
+  projection_y = showroom ? tuning::ShowroomCenterY : tuning::CenterY;
   const bool cinematic = g.mode == Mode::Title || g.mode == Mode::Finished;
   float view_yaw = g.camera_yaw;
   cam_sin = std::sin(view_yaw);
   cam_cos = std::cos(view_yaw);
   float camera_distance = showroom ? tuning::ShowroomDistance : tuning::ChaseDistance;
-  float height = showroom ? 2.5f : tuning::ChaseHeight;
+  float height = showroom ? tuning::ShowroomHeight : tuning::ChaseHeight;
   camera = g.car + Vec{-cam_sin * camera_distance, height, -cam_cos * camera_distance};
   camera.y = g.camera_height + height;
   pitch_sine = tuning::ChasePitchSine;
   pitch_cosine = tuning::ChasePitchCosine;
   if (cinematic) {
     // Planned road-relative shots keep the camera clear of tunnel roofs/walls.
-    bool portal = g.selected_track == 2 && g.segment >= tuning::TunnelStart - 8 &&
-                  g.segment <= tuning::TunnelEnd + 8;
-    int shot = portal ? 0 : int(g.cinematic_time / tuning::ShotSeconds) % 3;
+    bool portal = g.selected_track == 2 &&
+                  g.segment >= tuning::TunnelStart - tuning::PortalCameraMargin &&
+                  g.segment <= tuning::TunnelEnd + tuning::PortalCameraMargin;
+    int shot = portal ? 0 : int(g.cinematic_time / tuning::ShotSeconds) % tuning::CameraShotCount;
     if (shot == 1) {
-      int node = std::clamp(g.segment + 4, 0, NodeCount - 1);
-      camera = g.roadside(node, -(g.road[node].half_width + 2.f)) + Vec{0, 2.5f, 0};
-      camera.y = std::max(camera.y, g.car.y + 3.5f);
+      int node = std::clamp(g.segment + tuning::RoadsideLookAhead, 0, NodeCount - 1);
+      const int next = std::min(NodeCount - 1, node + 1);
+      Vec start = g.roadside(node, -(g.road[node].half_width + tuning::RoadsideOffset));
+      Vec end = g.roadside(next, -(g.road[next].half_width + tuning::RoadsideOffset));
+      camera = start + (end - start) * g.route_t + Vec{0, tuning::RoadsideHeight, 0};
+      camera.y = std::max(camera.y, g.car.y + tuning::RoadsideMinimumHeight);
     } else if (shot == 2) {
-      camera = g.car + Vec{-cam_sin * 13.f + cam_cos * 5.f, 9.f, -cam_cos * 13.f - cam_sin * 5.f};
+      camera = g.car + Vec{-cam_sin * tuning::HighShotBack + cam_cos * tuning::HighShotOffset,
+                           tuning::HighShotHeight,
+                           -cam_cos * tuning::HighShotBack - cam_sin * tuning::HighShotOffset};
     }
-    Vec aim = g.car + Vec{0, .8f, 0} - camera;
+    Vec aim = g.car + Vec{0, tuning::CarAimHeight, 0} - camera;
     view_yaw = std::atan2(aim.x, aim.z);
     float horizontal = std::sqrt(aim.x * aim.x + aim.z * aim.z);
     float pitch_angle = std::atan2(-aim.y, horizontal);
@@ -749,7 +755,7 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
                     : g.controls == Controls::Touch  ? "TAP"
                                                      : "X";
   const char *audio = g.controls == Controls::Keyboard ? "M"
-                      : g.controls == Controls::Touch  ? "SOUND"
+                      : g.controls == Controls::Touch  ? "TAP"
                                                        : "X";
   if (g.mode == Mode::Title) {
     rect(0, 0, W, 25, dark);

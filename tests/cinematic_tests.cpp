@@ -87,6 +87,19 @@ int main() {
       check(renderer->dropped == 0, "cinematic geometry fits budget");
     }
   }
+  g.replay_time = 0;
+  Vec previous_camera{};
+  for (int frame = 0; frame < 800; ++frame) {
+    g.replay_tick(.02f);
+    g.cinematic_time = tuning::ShotSeconds;
+    renderer->render(g, pixels.data());
+    if (frame) {
+      Vec move = renderer->camera - previous_camera;
+      check(std::sqrt(move.x * move.x + move.y * move.y + move.z * move.z) < 2.f,
+            "roadside camera follows smoothly across road nodes");
+    }
+    previous_camera = renderer->camera;
+  }
   Input aux;
   aux.auxiliary = true;
   g.tick(.02f, aux);

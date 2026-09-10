@@ -145,7 +145,7 @@ struct Renderer {
   };
   std::array<CachedVertex, tuning::VertexCacheSize> vertex_cache{};
   uint32_t render_frame = 0;
-  int32_t camera_x = 0, camera_y = 0, camera_z = 0, sine = 0, cosine = 16384;
+  int32_t camera_x = 0, camera_y = 0, camera_z = 0, sine = 0, cosine = tuning::BasisScale;
   int32_t pitch_sine = tuning::ChasePitchSine, pitch_cosine = tuning::ChasePitchCosine;
   int projection_y = tuning::CenterY;
   struct ShadowPolygon {

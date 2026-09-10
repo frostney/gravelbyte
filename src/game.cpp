@@ -240,6 +240,7 @@ void Game::replay_tick(float dt) {
   pitch = (a.pitch * (1 - t) + b.pitch * t) * .01f;
   roll = (a.roll * (1 - t) + b.roll * t) * .01f;
   segment = a.node;
+  locate();
   camera_yaw = yaw;
   camera_height = car.y;
   speed = std::sqrt((pb.x - pa.x) * (pb.x - pa.x) + (pb.z - pa.z) * (pb.z - pa.z)) /
