@@ -6,7 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <vector>
-using namespace Rally;
+using namespace GravelByte;
 static void Check(bool Passed, const char *FailureReason) {
   if (!Passed) {
     std::fprintf(stderr, "FAIL: %s\n", FailureReason);

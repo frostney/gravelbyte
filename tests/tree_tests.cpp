@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <memory>
 int main() {
-  using namespace Rally;
+  using namespace GravelByte;
   auto SceneRenderer = std::make_unique<Renderer>();
   std::array<uint16_t, FramebufferWidth * FramebufferHeight> CurrentRing{}, NextRing{};
   int Maximum = 0, OriginalFaces = 0, CulledFaces = 0;

@@ -1,5 +1,5 @@
-import { defineConfig as DefineConfig } from '@playwright/test';
-export default DefineConfig({
+import { defineConfig } from '@playwright/test';
+export default defineConfig({
   testDir: 'tests/web',
   timeout: 30000,
   workers: 1,

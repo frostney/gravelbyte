@@ -5,10 +5,12 @@
   "scripts": {
     "test:web": "playwright test",
     "format:web": "prettier --write \"site/*.{js,css,html}\" \"tests/web/*.js\" playwright.config.js package.json .prettierrc.json",
-    "format:web:check": "prettier --check \"site/*.{js,css,html}\" \"tests/web/*.js\" playwright.config.js package.json .prettierrc.json"
+    "format:web:check": "prettier --check \"site/*.{js,css,html}\" \"tests/web/*.js\" playwright.config.js package.json .prettierrc.json",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "lefthook": "2.1.12",
     "prettier": "3.9.6"
   }
 }

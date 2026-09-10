@@ -9,7 +9,7 @@
 // A driver using the public controls, never teleporting or modifying race state.
 // This validates that the complete authored course can actually be driven.
 int main(int ArgumentCount, char **Arguments) {
-  using namespace Rally;
+  using namespace GravelByte;
   for (int Track = 0; Track < TrackCount; ++Track)
     for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex) {
       Game GameState;

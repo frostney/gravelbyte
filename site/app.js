@@ -1,25 +1,25 @@
-const FindElement = (ElementIdentifier) => document.getElementById(ElementIdentifier);
-const Canvas = FindElement('game'),
-  RenderingContext = Canvas.getContext('2d', {
+const findElement = (elementIdentifier) => document.getElementById(elementIdentifier);
+const canvas = findElement('game'),
+  renderingContext = canvas.getContext('2d', {
     alpha: false,
   }),
-  FramebufferImage = RenderingContext.createImageData(120, 120);
-const StorageKey = 'gravelbyte.records.v1';
-let GameEngine,
-  Playing = false,
-  Muted = false,
-  ActiveInput = matchMedia('(pointer:coarse)').matches ? 'touch' : 'keyboard';
-let Keyboard = 0,
-  TouchBits = 0,
-  Pulses = 0,
-  LastTime = 0,
-  LastMode = -1,
-  PreviousGamepadInputs = 0,
-  SaveFailed = false;
-let EngineAudioContext, Oscillator, Gain;
-const MenuCommands = [];
-let MenuRelease = false;
-const KeyBits = {
+  framebufferImage = renderingContext.createImageData(120, 120);
+const storageKey = 'gravelbyte.records.v1';
+let gameEngine,
+  playing = false,
+  muted = false,
+  activeInput = matchMedia('(pointer:coarse)').matches ? 'touch' : 'keyboard';
+let keyboard = 0,
+  touchBits = 0,
+  pulses = 0,
+  lastTime = 0,
+  lastMode = -1,
+  previousGamepadInputs = 0,
+  saveFailed = false;
+let engineAudioContext, oscillator, gain;
+const menuCommands = [];
+let menuRelease = false;
+const keyBits = {
   ArrowLeft: 1,
   ArrowRight: 2,
   ArrowUp: 4,
@@ -31,13 +31,13 @@ const KeyBits = {
   KeyP: 64,
   Escape: 128,
 };
-const PressedKeys = new Set(),
-  Pointers = new Map();
-function UseInput(Input) {
-  ActiveInput = Input;
-  FindElement('input-label').textContent = Input;
-  FindElement('touch').hidden = Input !== 'touch' || !Playing;
-  const Hints = {
+const pressedKeys = new Set(),
+  pointers = new Map();
+function useInput(input) {
+  activeInput = input;
+  findElement('input-label').textContent = input;
+  findElement('touch').hidden = input !== 'touch' || !playing;
+  const hints = {
     keyboard:
       '← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause · M sound · Space records after finishing',
     gamepad:
@@ -45,9 +45,9 @@ function UseInput(Input) {
     touch:
       'Hold arrows to steer; Gas, Brake and Drift to drive. Go confirms; Back returns; Pause stops. Records shows splits after finishing.',
   };
-  FindElement('controls').replaceChildren();
-  if (Input === 'keyboard') {
-    const Bindings = [
+  findElement('controls').replaceChildren();
+  if (input === 'keyboard') {
+    const bindings = [
       [['←', '→'], 'steer / select'],
       [['↑', 'Z'], 'gas'],
       [['↓', 'X'], 'brake'],
@@ -58,15 +58,15 @@ function UseInput(Input) {
       [['M'], 'sound'],
       [['F'], 'fullscreen'],
     ];
-    for (const [Keys, Action] of Bindings) {
-      const Item = document.createElement('span');
-      Item.className = 'binding';
-      const KeyGroup = document.createElement('span');
-      KeyGroup.className = 'key-group';
-      for (const Key of Keys) {
-        const KeyElement = document.createElement('kbd');
-        KeyElement.textContent = Key;
-        KeyElement.setAttribute(
+    for (const [keys, action] of bindings) {
+      const item = document.createElement('span');
+      item.className = 'binding';
+      const keyGroup = document.createElement('span');
+      keyGroup.className = 'key-group';
+      for (const key of keys) {
+        const keyElement = document.createElement('kbd');
+        keyElement.textContent = key;
+        keyElement.setAttribute(
           'aria-label',
           {
             '←': 'Left arrow',
@@ -75,339 +75,339 @@ function UseInput(Input) {
             '↓': 'Down arrow',
             '␣': 'Space',
             '↵': 'Enter',
-          }[Key] ?? Key,
+          }[key] ?? key,
         );
-        KeyGroup.append(KeyElement);
+        keyGroup.append(keyElement);
       }
-      Item.append(KeyGroup, document.createTextNode(Action));
-      FindElement('controls').append(Item);
+      item.append(keyGroup, document.createTextNode(action));
+      findElement('controls').append(item);
     }
-  } else FindElement('controls').textContent = Hints[Input];
+  } else findElement('controls').textContent = hints[input];
 }
-function StartAudio() {
+function startAudio() {
   try {
-    if (!EngineAudioContext) {
-      EngineAudioContext = new window.AudioContext();
-      Oscillator = EngineAudioContext.createOscillator();
-      Gain = EngineAudioContext.createGain();
-      Oscillator.type = 'sawtooth';
-      Gain.gain.value = 0;
-      Oscillator.connect(Gain).connect(EngineAudioContext.destination);
-      Oscillator.start();
+    if (!engineAudioContext) {
+      engineAudioContext = new window.AudioContext();
+      oscillator = engineAudioContext.createOscillator();
+      gain = engineAudioContext.createGain();
+      oscillator.type = 'sawtooth';
+      gain.gain.value = 0;
+      oscillator.connect(gain).connect(engineAudioContext.destination);
+      oscillator.start();
     }
-    EngineAudioContext.resume().catch(() => {});
+    engineAudioContext.resume().catch(() => {});
   } catch {
     /* Silent play remains available. */
   }
 }
-function ResetInputs() {
-  Keyboard = TouchBits = Pulses = PreviousGamepadInputs = 0;
-  PressedKeys.clear();
-  MenuCommands.length = 0;
-  MenuRelease = false;
-  Pointers.clear();
+function resetInputs() {
+  keyboard = touchBits = pulses = previousGamepadInputs = 0;
+  pressedKeys.clear();
+  menuCommands.length = 0;
+  menuRelease = false;
+  pointers.clear();
   document
     .querySelectorAll('#touch .pressed')
-    .forEach((Button) => Button.classList.remove('pressed'));
+    .forEach((button) => button.classList.remove('pressed'));
 }
-function Suspend() {
-  ResetInputs();
-  LastTime = 0;
-  if (GameEngine) GameEngine._GravelbyteSuspend();
-  if (Gain) Gain.gain.value = 0;
+function suspend() {
+  resetInputs();
+  lastTime = 0;
+  if (gameEngine) gameEngine._GravelbyteSuspend();
+  if (gain) gain.gain.value = 0;
 }
-window.addEventListener('blur', Suspend);
+window.addEventListener('blur', suspend);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) Suspend();
+  if (document.hidden) suspend();
 });
-Canvas.addEventListener('blur', Suspend);
-Canvas.addEventListener('pointerdown', (Event) => {
-  UseInput(Event.pointerType === 'touch' ? 'touch' : 'keyboard');
-  Canvas.focus();
-  StartAudio();
+canvas.addEventListener('blur', suspend);
+canvas.addEventListener('pointerdown', (event) => {
+  useInput(event.pointerType === 'touch' ? 'touch' : 'keyboard');
+  canvas.focus();
+  startAudio();
 });
-Canvas.addEventListener('keydown', (Event) => {
-  if (!(Event.code in KeyBits) && !['KeyM', 'KeyF'].includes(Event.code)) return;
-  Event.preventDefault();
-  UseInput('keyboard');
-  StartAudio();
-  if (Event.code === 'KeyF') {
-    if (!Event.repeat) Fullscreen();
+canvas.addEventListener('keydown', (event) => {
+  if (!(event.code in keyBits) && !['KeyM', 'KeyF'].includes(event.code)) return;
+  event.preventDefault();
+  useInput('keyboard');
+  startAudio();
+  if (event.code === 'KeyF') {
+    if (!event.repeat) fullscreen();
     return;
   }
-  if (Event.code === 'KeyM') {
-    if (!Event.repeat) FindElement('mute').click();
+  if (event.code === 'KeyM') {
+    if (!event.repeat) findElement('mute').click();
     return;
   }
-  if (!Event.repeat) Pulses |= KeyBits[Event.code];
-  PressedKeys.add(Event.code);
-  Keyboard = [...PressedKeys].reduce((InputValue, KeyCode) => InputValue | KeyBits[KeyCode], 0);
+  if (!event.repeat) pulses |= keyBits[event.code];
+  pressedKeys.add(event.code);
+  keyboard = [...pressedKeys].reduce((inputValue, keyCode) => inputValue | keyBits[keyCode], 0);
 });
-window.addEventListener('keyup', (Event) => {
-  PressedKeys.delete(Event.code);
-  Keyboard = [...PressedKeys].reduce((InputValue, KeyCode) => InputValue | KeyBits[KeyCode], 0);
+window.addEventListener('keyup', (event) => {
+  pressedKeys.delete(event.code);
+  keyboard = [...pressedKeys].reduce((inputValue, keyCode) => inputValue | keyBits[keyCode], 0);
 });
-for (const Button of document.querySelectorAll('[data-bit]')) {
-  Button.addEventListener('pointerdown', (Event) => {
-    Event.preventDefault();
-    UseInput('touch');
-    Canvas.focus();
-    StartAudio();
-    Button.setPointerCapture(Event.pointerId);
-    Pulses |= Number(Button.dataset.bit);
-    Pointers.set(Event.pointerId, Number(Button.dataset.bit));
-    Button.classList.add('pressed');
-    TouchBits = [...Pointers.values()].reduce(
-      (AccumulatedInputs, InputValue) => AccumulatedInputs | InputValue,
+for (const button of document.querySelectorAll('[data-bit]')) {
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    useInput('touch');
+    canvas.focus();
+    startAudio();
+    button.setPointerCapture(event.pointerId);
+    pulses |= Number(button.dataset.bit);
+    pointers.set(event.pointerId, Number(button.dataset.bit));
+    button.classList.add('pressed');
+    touchBits = [...pointers.values()].reduce(
+      (accumulatedInputs, inputValue) => accumulatedInputs | inputValue,
       0,
     );
   });
-  const Release = (Event) => {
-    Pointers.delete(Event.pointerId);
-    TouchBits = [...Pointers.values()].reduce(
-      (AccumulatedInputs, InputValue) => AccumulatedInputs | InputValue,
+  const release = (event) => {
+    pointers.delete(event.pointerId);
+    touchBits = [...pointers.values()].reduce(
+      (accumulatedInputs, inputValue) => accumulatedInputs | inputValue,
       0,
     );
-    Button.classList.remove('pressed');
+    button.classList.remove('pressed');
   };
-  Button.addEventListener('pointerup', Release);
-  Button.addEventListener('pointercancel', Release);
-  Button.addEventListener('lostpointercapture', Release);
+  button.addEventListener('pointerup', release);
+  button.addEventListener('pointercancel', release);
+  button.addEventListener('lostpointercapture', release);
 }
-FindElement('play').addEventListener('click', (Event) => {
-  UseInput(Event.pointerType === 'touch' ? 'touch' : ActiveInput);
-  Playing = true;
-  Canvas.focus();
-  StartAudio();
-  FindElement('start-overlay').hidden = true;
-  UseInput(ActiveInput);
-  LastTime = 0;
+findElement('play').addEventListener('click', (event) => {
+  useInput(event.pointerType === 'touch' ? 'touch' : activeInput);
+  playing = true;
+  canvas.focus();
+  startAudio();
+  findElement('start-overlay').hidden = true;
+  useInput(activeInput);
+  lastTime = 0;
 });
-FindElement('mute').addEventListener('pointerdown', (Event) => {
-  if (Playing) Event.preventDefault();
+findElement('mute').addEventListener('pointerdown', (event) => {
+  if (playing) event.preventDefault();
 });
-function UpdateMute() {
-  FindElement('mute').setAttribute('aria-label', Muted ? 'Unmute' : 'Mute');
-  FindElement('mute').setAttribute('title', Muted ? 'Unmute' : 'Mute');
-  FindElement('mute').setAttribute('aria-pressed', String(Muted));
+function updateMute() {
+  findElement('mute').setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  findElement('mute').setAttribute('title', muted ? 'Unmute' : 'Mute');
+  findElement('mute').setAttribute('aria-pressed', String(muted));
 }
-FindElement('mute').addEventListener('click', () => {
-  if (!GameEngine) return;
-  GameEngine._GravelbyteToggleAudio();
-  Muted = !!GameEngine._GravelbyteMuted();
-  Save();
-  UpdateMute();
-  if (Playing) {
-    Canvas.focus();
-    StartAudio();
+findElement('mute').addEventListener('click', () => {
+  if (!gameEngine) return;
+  gameEngine._GravelbyteToggleAudio();
+  muted = !!gameEngine._GravelbyteMuted();
+  save();
+  updateMute();
+  if (playing) {
+    canvas.focus();
+    startAudio();
   }
 });
-async function Fullscreen() {
+async function fullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await FindElement('stage').requestFullscreen();
-    if (Playing) Canvas.focus();
+    else await findElement('stage').requestFullscreen();
+    if (playing) canvas.focus();
   } catch {
-    FindElement('save-status').textContent =
+    findElement('save-status').textContent =
       'Fullscreen is unavailable in this browser. You can still play here.';
   }
 }
-function Gamepad() {
-  let InputBits = 0;
-  for (const GamepadState of navigator.getGamepads?.() ?? []) {
-    if (!GamepadState || GamepadState.mapping !== 'standard') continue;
-    const Held = (Index) => !!GamepadState.buttons[Index]?.pressed;
-    if (Held(14) || GamepadState.axes[0] < -0.25) InputBits |= 1;
-    if (Held(15) || GamepadState.axes[0] > 0.25) InputBits |= 2;
-    if (Held(0) || Held(7)) InputBits |= 4;
-    if (Held(1) || Held(6)) InputBits |= 8;
-    if (Held(2)) InputBits |= 16;
-    if (Held(0)) InputBits |= 32;
-    if (Held(9)) InputBits |= 64;
-    if (Held(1)) InputBits |= 128;
+function gamepad() {
+  let inputBits = 0;
+  for (const gamepadState of navigator.getGamepads?.() ?? []) {
+    if (!gamepadState || gamepadState.mapping !== 'standard') continue;
+    const held = (index) => !!gamepadState.buttons[index]?.pressed;
+    if (held(14) || gamepadState.axes[0] < -0.25) inputBits |= 1;
+    if (held(15) || gamepadState.axes[0] > 0.25) inputBits |= 2;
+    if (held(0) || held(7)) inputBits |= 4;
+    if (held(1) || held(6)) inputBits |= 8;
+    if (held(2)) inputBits |= 16;
+    if (held(0)) inputBits |= 32;
+    if (held(9)) inputBits |= 64;
+    if (held(1)) inputBits |= 128;
   }
-  if (InputBits && InputBits !== PreviousGamepadInputs) {
-    UseInput('gamepad');
+  if (inputBits && inputBits !== previousGamepadInputs) {
+    useInput('gamepad');
   }
-  PreviousGamepadInputs = InputBits;
-  return document.activeElement === Canvas ? InputBits : 0;
+  previousGamepadInputs = inputBits;
+  return document.activeElement === canvas ? inputBits : 0;
 }
-function Render() {
-  const BufferOffset = GameEngine._GravelbyteFrame() >>> 1;
-  const PixelMemory = GameEngine.HEAPU16;
-  for (let Index = 0; Index < 14400; Index++) {
-    let PackedColor = PixelMemory[BufferOffset + Index];
-    FramebufferImage.data[Index * 4] = (PackedColor >>> 12) * 17;
-    FramebufferImage.data[Index * 4 + 1] = ((PackedColor >>> 8) & 15) * 17;
-    FramebufferImage.data[Index * 4 + 2] = ((PackedColor >>> 4) & 15) * 17;
-    FramebufferImage.data[Index * 4 + 3] = 255;
+function render() {
+  const bufferOffset = gameEngine._GravelbyteFrame() >>> 1;
+  const pixelMemory = gameEngine.HEAPU16;
+  for (let index = 0; index < 14400; index++) {
+    let packedColor = pixelMemory[bufferOffset + index];
+    framebufferImage.data[index * 4] = (packedColor >>> 12) * 17;
+    framebufferImage.data[index * 4 + 1] = ((packedColor >>> 8) & 15) * 17;
+    framebufferImage.data[index * 4 + 2] = ((packedColor >>> 4) & 15) * 17;
+    framebufferImage.data[index * 4 + 3] = 255;
   }
-  RenderingContext.putImageData(FramebufferImage, 0, 0);
+  renderingContext.putImageData(framebufferImage, 0, 0);
 }
-function Save() {
-  if (!GameEngine._GravelbyteSavePending()) return;
+function save() {
+  if (!gameEngine._GravelbyteSavePending()) return;
   try {
-    const BufferOffset = GameEngine._GravelbyteSave(),
-      Size = GameEngine._GravelbyteSaveSize();
+    const bufferOffset = gameEngine._GravelbyteSave(),
+      size = gameEngine._GravelbyteSaveSize();
     localStorage.setItem(
-      StorageKey,
-      JSON.stringify(Array.from(GameEngine.HEAPU8.subarray(BufferOffset, BufferOffset + Size))),
+      storageKey,
+      JSON.stringify(Array.from(gameEngine.HEAPU8.subarray(bufferOffset, bufferOffset + size))),
     );
-    GameEngine._GravelbyteMarkSaved();
-    if (SaveFailed) FindElement('save-status').textContent = '';
-    SaveFailed = false;
+    gameEngine._GravelbyteMarkSaved();
+    if (saveFailed) findElement('save-status').textContent = '';
+    saveFailed = false;
   } catch {
-    GameEngine._GravelbyteMarkSaved();
-    SaveFailed = true;
-    FindElement('save-status').textContent =
+    gameEngine._GravelbyteMarkSaved();
+    saveFailed = true;
+    findElement('save-status').textContent =
       'Storage is unavailable. Records last for this session only.';
   }
 }
-function Tick(TimestampMilliseconds) {
-  if (Playing && !document.hidden) {
-    const DeltaTimeSeconds = LastTime ? (TimestampMilliseconds - LastTime) / 1000 : 0;
-    LastTime = TimestampMilliseconds;
-    if (DeltaTimeSeconds > 0.25) {
-      Suspend();
+function tick(timestampMilliseconds) {
+  if (playing && !document.hidden) {
+    const deltaTimeSeconds = lastTime ? (timestampMilliseconds - lastTime) / 1000 : 0;
+    lastTime = timestampMilliseconds;
+    if (deltaTimeSeconds > 0.25) {
+      suspend();
     } else {
-      const GamepadState = Gamepad();
-      let MenuCommand = 0;
-      if (MenuRelease) MenuRelease = false;
-      else if (MenuCommands.length) {
-        MenuCommand = MenuCommands.shift();
-        MenuRelease = true;
+      const gamepadState = gamepad();
+      let menuCommand = 0;
+      if (menuRelease) menuRelease = false;
+      else if (menuCommands.length) {
+        menuCommand = menuCommands.shift();
+        menuRelease = true;
       }
-      GameEngine._GravelbyteUpdate(
-        Math.max(0.0001, DeltaTimeSeconds),
-        Keyboard | TouchBits | Pulses | GamepadState | MenuCommand,
+      gameEngine._GravelbyteUpdate(
+        Math.max(0.0001, deltaTimeSeconds),
+        keyboard | touchBits | pulses | gamepadState | menuCommand,
         {
           keyboard: 1,
           gamepad: 2,
           touch: 3,
-        }[ActiveInput],
+        }[activeInput],
       );
-      Pulses = 0;
+      pulses = 0;
     }
-    const Mode = GameEngine._GravelbyteMode();
-    Muted = !!GameEngine._GravelbyteMuted();
-    UpdateMute();
-    Canvas.dataset.mode = String(Mode);
-    Canvas.dataset.car = String(GameEngine._GravelbyteCar());
-    Canvas.dataset.track = String(GameEngine._GravelbyteTrack());
-    if (Mode !== LastMode) {
-      LastMode = Mode;
-      const Race = Mode === 3 || Mode === 4;
+    const mode = gameEngine._GravelbyteMode();
+    muted = !!gameEngine._GravelbyteMuted();
+    updateMute();
+    canvas.dataset.mode = String(mode);
+    canvas.dataset.car = String(gameEngine._GravelbyteCar());
+    canvas.dataset.track = String(gameEngine._GravelbyteTrack());
+    if (mode !== lastMode) {
+      lastMode = mode;
+      const race = mode === 3 || mode === 4;
       document
         .querySelectorAll('.race-control')
-        .forEach((InputValue) => (InputValue.hidden = !Race));
-      const PauseTouch = document.querySelector('.touch-pause');
-      PauseTouch.hidden = !Race && Mode !== 5;
-      PauseTouch.textContent = Mode === 5 ? 'Resume' : 'Pause';
+        .forEach((inputValue) => (inputValue.hidden = !race));
+      const pauseTouch = document.querySelector('.touch-pause');
+      pauseTouch.hidden = !race && mode !== 5;
+      pauseTouch.textContent = mode === 5 ? 'Resume' : 'Pause';
       document
         .querySelectorAll('.menu-control')
-        .forEach((InputValue) => (InputValue.hidden = Race));
-      FindElement('records').hidden = Mode !== 6;
-      const MenuHadFocus = FindElement('accessible-menu').contains(document.activeElement);
-      UpdateAccessibleMenu(Mode);
-      if (Mode === 3 && MenuHadFocus) Canvas.focus();
-      else if (MenuHadFocus && document.activeElement === document.body)
-        FindElement('menu-confirm').focus();
+        .forEach((inputValue) => (inputValue.hidden = race));
+      findElement('records').hidden = mode !== 6;
+      const menuHadFocus = findElement('accessible-menu').contains(document.activeElement);
+      updateAccessibleMenu(mode);
+      if (mode === 3 && menuHadFocus) canvas.focus();
+      else if (menuHadFocus && document.activeElement === document.body)
+        findElement('menu-confirm').focus();
     }
-    const Status = GameEngine.UTF8ToString(GameEngine._GravelbyteStatus());
-    if (FindElement('game-status').textContent !== Status)
-      FindElement('game-status').textContent = Status;
-    if (Mode === 2)
-      FindElement('menu-confirm').setAttribute(
+    const status = gameEngine.UTF8ToString(gameEngine._GravelbyteStatus());
+    if (findElement('game-status').textContent !== status)
+      findElement('game-status').textContent = status;
+    if (mode === 2)
+      findElement('menu-confirm').setAttribute(
         'aria-disabled',
-        String(!GameEngine._GravelbyteTrackUnlocked()),
+        String(!gameEngine._GravelbyteTrackUnlocked()),
       );
-    if (Gain) {
-      Gain.gain.setTargetAtTime(
-        !Muted && (Mode === 0 || Mode === 4 || Mode === 6) ? 0.035 : 0,
-        EngineAudioContext.currentTime,
+    if (gain) {
+      gain.gain.setTargetAtTime(
+        !muted && (mode === 0 || mode === 4 || mode === 6) ? 0.035 : 0,
+        engineAudioContext.currentTime,
         0.03,
       );
-      Oscillator.frequency.setTargetAtTime(
-        65 + GameEngine._GravelbyteSpeed() * 8,
-        EngineAudioContext.currentTime,
+      oscillator.frequency.setTargetAtTime(
+        65 + gameEngine._GravelbyteSpeed() * 8,
+        engineAudioContext.currentTime,
         0.03,
       );
     }
-    Save();
-    Render();
+    save();
+    render();
   }
-  requestAnimationFrame(Tick);
+  requestAnimationFrame(tick);
 }
-function MenuInput(Bit) {
-  if (GameEngine && Playing) MenuCommands.push(Bit);
+function menuInput(bit) {
+  if (gameEngine && playing) menuCommands.push(bit);
 }
-for (const [ElementIdentifier, Bit] of [
+for (const [elementIdentifier, bit] of [
   ['menu-previous', 1],
   ['menu-next', 2],
   ['menu-confirm', 32],
   ['menu-back', 128],
 ])
-  FindElement(ElementIdentifier).addEventListener('click', () => MenuInput(Bit));
-function UpdateAccessibleMenu(Mode) {
-  FindElement('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(Mode);
-  const Select = Mode === 1 || Mode === 2;
-  for (const ElementIdentifier of ['menu-previous', 'menu-next'])
-    FindElement(ElementIdentifier).hidden = !Select;
-  FindElement('menu-previous').textContent = Mode === 1 ? 'Previous car' : 'Previous track';
-  FindElement('menu-next').textContent = Mode === 1 ? 'Next car' : 'Next track';
-  FindElement('menu-confirm').textContent =
-    Mode === 0 ? 'Choose car' : Mode === 1 ? 'Choose track' : Mode === 2 ? 'Start race' : 'Retry';
-  FindElement('menu-confirm').setAttribute('aria-disabled', 'false');
-  FindElement('menu-back').hidden = Mode === 0;
-  FindElement('menu-back').textContent =
-    Mode === 1 ? 'Back to title' : Mode === 6 ? 'Choose track' : 'Choose car';
-  FindElement('menu-aux').hidden = Mode !== 6 && Mode !== 5;
-  FindElement('menu-aux').textContent = Mode === 5 ? 'Resume' : 'Toggle checkpoint records';
+  findElement(elementIdentifier).addEventListener('click', () => menuInput(bit));
+function updateAccessibleMenu(mode) {
+  findElement('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(mode);
+  const select = mode === 1 || mode === 2;
+  for (const elementIdentifier of ['menu-previous', 'menu-next'])
+    findElement(elementIdentifier).hidden = !select;
+  findElement('menu-previous').textContent = mode === 1 ? 'Previous car' : 'Previous track';
+  findElement('menu-next').textContent = mode === 1 ? 'Next car' : 'Next track';
+  findElement('menu-confirm').textContent =
+    mode === 0 ? 'Choose car' : mode === 1 ? 'Choose track' : mode === 2 ? 'Start race' : 'Retry';
+  findElement('menu-confirm').setAttribute('aria-disabled', 'false');
+  findElement('menu-back').hidden = mode === 0;
+  findElement('menu-back').textContent =
+    mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : 'Choose car';
+  findElement('menu-aux').hidden = mode !== 6 && mode !== 5;
+  findElement('menu-aux').textContent = mode === 5 ? 'Resume' : 'Toggle checkpoint records';
 }
-FindElement('menu-aux').addEventListener('click', () => MenuInput(LastMode === 5 ? 64 : 256));
-UseInput(ActiveInput);
+findElement('menu-aux').addEventListener('click', () => menuInput(lastMode === 5 ? 64 : 256));
+useInput(activeInput);
 try {
-  const { default: CreateGravelbyte } = await import('./gravelbyte.js');
-  GameEngine = await CreateGravelbyte();
-  const Expected = document.querySelector('meta[name="gravelbyte-build"]').content;
+  const { default: createGravelbyte } = await import('./gravelbyte.js');
+  gameEngine = await createGravelbyte();
+  const expected = document.querySelector('meta[name="gravelbyte-build"]').content;
   if (
-    typeof GameEngine._GravelbyteBuildIdentifier !== 'function' ||
-    GameEngine.UTF8ToString(GameEngine._GravelbyteBuildIdentifier()) !== Expected
+    typeof gameEngine._GravelbyteBuildIdentifier !== 'function' ||
+    gameEngine.UTF8ToString(gameEngine._GravelbyteBuildIdentifier()) !== expected
   ) {
-    const BuildError = new Error('Game build mismatch');
-    BuildError.code = 'BUILD_MISMATCH';
-    throw BuildError;
+    const buildError = new Error('Game build mismatch');
+    buildError.code = 'BUILD_MISMATCH';
+    throw buildError;
   }
   try {
-    const Saved = localStorage.getItem(StorageKey);
-    if (Saved) {
-      const Bytes = JSON.parse(Saved);
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const bytes = JSON.parse(saved);
       if (
-        !Array.isArray(Bytes) ||
-        Bytes.length !== GameEngine._GravelbyteSaveSize() ||
-        !Bytes.every(
-          (ByteValue) => Number.isInteger(ByteValue) && ByteValue >= 0 && ByteValue <= 255,
+        !Array.isArray(bytes) ||
+        bytes.length !== gameEngine._GravelbyteSaveSize() ||
+        !bytes.every(
+          (byteValue) => Number.isInteger(byteValue) && byteValue >= 0 && byteValue <= 255,
         )
       )
         throw Error('Invalid record');
-      GameEngine.HEAPU8.set(Bytes, GameEngine._GravelbyteSave());
-      if (!GameEngine._GravelbyteLoad()) throw Error('Invalid record');
+      gameEngine.HEAPU8.set(bytes, gameEngine._GravelbyteSave());
+      if (!gameEngine._GravelbyteLoad()) throw Error('Invalid record');
     }
   } catch {
-    FindElement('save-status').textContent =
+    findElement('save-status').textContent =
       'Previous records could not be restored. A fresh session is ready.';
   }
-  Render();
-  FindElement('play').disabled = false;
-  FindElement('play').textContent = 'Play Gravelbyte';
-  FindElement('load-status').textContent = 'Ready to play.';
-  Muted = !!GameEngine._GravelbyteMuted();
-  UpdateMute();
-  requestAnimationFrame(Tick);
-} catch (Error) {
-  FindElement('load-status').textContent =
-    Error.code === 'BUILD_MISMATCH'
+  render();
+  findElement('play').disabled = false;
+  findElement('play').textContent = 'Play Gravelbyte';
+  findElement('load-status').textContent = 'Ready to play.';
+  muted = !!gameEngine._GravelbyteMuted();
+  updateMute();
+  requestAnimationFrame(tick);
+} catch (error) {
+  findElement('load-status').textContent =
+    error.code === 'BUILD_MISMATCH'
       ? 'The game files are from different builds. Reload the page for a matching release.'
       : 'The game could not load. Please reload the page or download the PicoSystem version.';
-  console.error(Error);
+  console.error(error);
 }

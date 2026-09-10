@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-using namespace Rally;
+using namespace GravelByte;
 
 static void Check(bool Passed, const char *Message) {
   if (!Passed) {

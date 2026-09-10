@@ -1,3 +1,6 @@
+> Current acceptance: around 40fps at the unchanged default clock, with a 30fps
+> minimum. Historical 50fps comparisons below record the former aspiration.
+
 # Validation
 
 For the car-name migration and latest shadow fix, see

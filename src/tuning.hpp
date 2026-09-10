@@ -1,6 +1,6 @@
 #pragma once
 #include <cstddef>
-namespace Rally::Tuning {
+namespace GravelByte::Tuning {
 constexpr float HalfTurnRadians = 3.14159265f, FullTurnRadians = 6.2831853f;
 constexpr float PhysicsStep = .01f, MaximumFrameDeltaSeconds = .25f, CountdownSeconds = 3.f;
 constexpr float SteeringResponse = 7.f, CameraResponse = 4.f, Gravity = 16.f;
@@ -35,9 +35,9 @@ constexpr int StatisticsTop = 84, StatisticsRowHeight = 8, StatisticBarCount = 5
 constexpr unsigned SaveMagic = 0x4752564c, SaveVersion = 2, MutedFlag = 0x100;
 constexpr unsigned SelectionMask = 0xff, HashOffsetBasis = 2166136261u, HashPrime = 16777619u;
 constexpr unsigned MaximumRecordMilliseconds = 86400000;
-} // namespace Rally::Tuning
+} // namespace GravelByte::Tuning
 
-namespace Rally::Tuning::Physics {
+namespace GravelByte::Tuning::Physics {
 constexpr float BrakeDeceleration = 22.f, ReverseAcceleration = 5.f, HandbrakeDrag = 5.f;
 constexpr float HandbrakeGrip = 1.35f, GripFalloffSpeed = 18.f, GripFalloff = .03f;
 constexpr float BrakingGrip = .9f, OffroadGrip = 3.8f, OffroadTraction = 5.5f;
@@ -51,12 +51,12 @@ constexpr float TreeBounce = -.12f, TreeImpact = .7f, StrandedDistance = 22.f;
 constexpr float StrandedSpeed = 1.2f, RecoveryDelay = 2.5f, RecoveryDistance = 45.f;
 constexpr float RecoveryPenalty = 3.f, MessageSeconds = 2.5f;
 constexpr float OffroadStep = .12f, MaximumBankSlope = 1.5f, MaximumSupportSpeed = 12.f;
-} // namespace Rally::Tuning::Physics
-namespace Rally::Tuning::Audio {
+} // namespace GravelByte::Tuning::Physics
+namespace GravelByte::Tuning::Audio {
 constexpr unsigned UpdateIntervalMicroseconds = 50000, SampleRate = 22050;
 constexpr float BaseFrequency = 65.f, SpeedFrequency = 8.f;
-} // namespace Rally::Tuning::Audio
-namespace Rally::Tuning::Telemetry {
+} // namespace GravelByte::Tuning::Audio
+namespace GravelByte::Tuning::Telemetry {
 constexpr unsigned MinimumFrameRateIntervalMicroseconds = 33334,
                    ReportIntervalMicroseconds = 2000000;
 }

@@ -9,7 +9,7 @@
 #include <cstring>
 #include <string>
 
-using namespace Rally;
+using namespace GravelByte;
 static Game GameState;
 static Renderer SceneRenderer;
 static std::array<uint16_t, FramebufferWidth * FramebufferHeight> Framebuffer;
@@ -175,8 +175,10 @@ int main(int ArgumentCount, char **Arguments) {
           PlayerInput.Back = true;
         if (Event.key.keysym.sym == SDLK_p)
           PlayerInput.Pause = true;
+#ifdef GRAVELBYTE_DIAGNOSTICS
         if (Event.key.keysym.sym == SDLK_F1)
           Diagnostics = !Diagnostics;
+#endif
         if (Event.key.keysym.sym == SDLK_SPACE)
           PlayerInput.Auxiliary = true;
         if (Event.key.keysym.sym == SDLK_m)

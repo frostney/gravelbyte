@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <limits>
 
-using namespace Rally;
+using namespace GravelByte;
 static void Check(bool Condition, const char *Message) {
   if (!Condition) {
     std::fprintf(stderr, "FAIL: %s\n", Message);
@@ -20,6 +20,25 @@ static Game Running() {
   return GameState;
 }
 int main() {
+  for (int TrackIndex = 0; TrackIndex < TrackCount; ++TrackIndex) {
+    Game IdleCar;
+    IdleCar.SelectCarAndTrack(0, TrackIndex);
+    IdleCar.Update(3.1f, {});
+    const Vector3 StartPosition = IdleCar.CarPosition;
+    for (int FrameIndex = 0; FrameIndex < 500; ++FrameIndex)
+      IdleCar.Update(.02f, {});
+    Check(IdleCar.CarPosition.CoordinateX == StartPosition.CoordinateX &&
+              IdleCar.CarPosition.CoordinateY == StartPosition.CoordinateY &&
+              IdleCar.CarPosition.CoordinateZ == StartPosition.CoordinateZ && IdleCar.Speed == 0,
+          "untouched starting car stays on its grid position on every slope");
+    DrivingInput ReverseInput{};
+    ReverseInput.Brake = true;
+    for (int FrameIndex = 0; FrameIndex < 20; ++FrameIndex)
+      IdleCar.Update(.02f, ReverseInput);
+    Check(!IdleCar.StartHeld && IdleCar.Speed > 0, "deliberate reverse releases the starting hold");
+    IdleCar.Restart();
+    Check(IdleCar.StartHeld, "restart restores the starting hold");
+  }
   Game GameState;
   Check(GameState.CurrentMode == GameMode::Title, "boot waits on title");
   GameState.Update(10, {});

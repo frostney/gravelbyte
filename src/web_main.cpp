@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <emscripten/emscripten.h>
-using namespace Rally;
+using namespace GravelByte;
 static Game GameState;
 static Renderer SceneRenderer;
 static std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels;

@@ -3,12 +3,12 @@
 C++17 shared game and software 3D renderer for PicoSystem and browsers.
 Keep the original picorally checkout intact. Build with CMake; format owned C++
 with pinned clang-format. All three cars must finish all three courses through
-public controls, with five splits and no automatic recovery. Keep Standard on
-Bracken Ridge physics compatible with course version 3 saves.
+public controls, with five splits and no automatic recovery. The redesigned courses use a clean save-format break; old saves need not migrate.
 
 Use PascalCase for project-owned identifiers, including namespaces, types,
 functions, methods, fields, variables, parameters, constants and enum members
-in C++ and browser JavaScript. Use descriptive words instead of short names,
+in C++. Use camelCase for owned JavaScript bindings and properties; preserve external API names.
+Use GravelByte as the C++ namespace. Use descriptive words instead of short names,
 abbreviations or single-letter temporaries: DeltaTimeSeconds instead of dt,
 RenderingContext instead of ctx, FramebufferWidth instead of W, and
 CarSpecification instead of CarSpec. Name positions and operands by their role
@@ -21,7 +21,8 @@ clang-tidy naming checks in addition to clang-format and Prettier; the
 formatters handle layout, not identifier naming.
 
 120x120 framebuffer, 264KB RP2040 SRAM. Generate only the selected track.
-Preserve 3D roads and handling. Target 50fps, require 30fps minimum in normal
+Preserve 3D roads and handling. Accept the SDK display cadence around 40fps; keep the default clock unchanged.
+Require 30fps minimum in normal
 racing; only full-course device telemetry can establish hardware performance.
 Before flashing identify the device and make and verify a full flash backup.
 Keep benchmark firmware separate from player firmware and restore the latter.
