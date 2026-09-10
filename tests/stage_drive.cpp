@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
     for (int car = 0; car < CarCount; ++car) {
       Game game;
       game.select(car, track);
-      game.mode = Mode::Title;
+      game.mode = Mode::Countdown;
       Input start{};
       start.action = true;
       game.tick(.02f, start);

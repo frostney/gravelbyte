@@ -22,6 +22,10 @@ test('keyboard menus, pause, records selections and reload', async ({ page }) =>
   await press(page, 'ArrowRight');
   await expect(game).toHaveAttribute('data-track', '2');
   await press(page, 'Enter');
+  await expect(game).toHaveAttribute('data-mode', '2');
+  await press(page, 'ArrowRight');
+  await expect(game).toHaveAttribute('data-track', '0');
+  await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '3');
   await expect(game).toHaveAttribute('data-mode', '4', { timeout: 6000 });
   await page.keyboard.down('ArrowUp');
@@ -35,8 +39,10 @@ test('keyboard menus, pause, records selections and reload', async ({ page }) =>
   await expect(game).toHaveAttribute('data-mode', '4');
   await page.reload();
   await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-car', '2');
-  await expect(game).toHaveAttribute('data-track', '2');
+  await expect(game).toHaveAttribute('data-track', '0');
+  await expect(page.getByRole('button', { name: 'Unmute', exact: true })).toBeVisible();
   await expect(page.locator('#touch')).toBeHidden();
   await expect(page.locator('#controls')).toContainText('Enter confirm');
   expect(errors).toEqual([]);

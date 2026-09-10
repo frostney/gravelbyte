@@ -1,4 +1,5 @@
 #pragma once
+#include "tuning.hpp"
 #include <array>
 #include <cstdint>
 
@@ -28,7 +29,7 @@ struct Node {
 };
 struct Input {
   bool left = false, right = false, throttle = false, brake = false, handbrake = false,
-       action = false, pause = false, back = false;
+       action = false, pause = false, back = false, auxiliary = false, mute = false;
 };
 enum class Mode { Title, CarSelect, TrackSelect, Countdown, Racing, Paused, Finished };
 enum class Controls { Pico, Keyboard, Gamepad, Touch };
@@ -46,6 +47,12 @@ struct Record {
   std::array<float, SectorCount> splits{};
 };
 
+struct ReplayPose {
+  uint16_t node;
+  int16_t x, y, z, yaw;
+  int8_t pitch, roll;
+};
+static_assert(sizeof(ReplayPose) == 12);
 struct Game {
   std::array<Node, NodeCount> road{};
   std::array<std::array<Vec, 10>, NodeCount> terrain{};
@@ -62,6 +69,23 @@ struct Game {
   Mode mode = Mode::Title, resume_mode = Mode::Racing;
   bool new_record = false, save_requested = false;
   int selected_car = 1, selected_track = 0;
+  bool muted = false, show_records = false, demo_active = false;
+  int title_car = 1, title_track = 0;
+  float cinematic_time = 0, demo_time = 0;
+  std::array<float, SectorCount> prior_splits{};
+  std::array<ReplayPose, tuning::ReplayCapacity> replay{};
+  int replay_count = 0;
+  float replay_interval = tuning::ReplayInterval, record_clock = 0, replay_duration = 0;
+  float replay_time = 0, next_sample = 0;
+  void record_pose(bool final = false);
+  void replay_tick(float dt);
+  void demo_tick(float dt);
+  bool unlocked(int track) const;
+  bool bridge(int node) const;
+  bool tunnel(int node) const;
+  bool coast(int node) const;
+  bool has_scenery(int node, int sign) const;
+  void toggle_audio();
   Controls controls = Controls::Pico;
   float menu_rotation = 0;
   bool menu_left = false, menu_right = false;
@@ -119,18 +143,20 @@ struct Renderer {
     uint32_t frame = 0;
     CameraVertex transformed{};
   };
-  std::array<CachedVertex, 512> vertex_cache{};
+  std::array<CachedVertex, tuning::VertexCacheSize> vertex_cache{};
   uint32_t render_frame = 0;
-  int32_t camera_x = 0, camera_y = 0, camera_z = 0, sine = 0, cosine = 16384;
+  int32_t camera_x = 0, camera_y = 0, camera_z = 0, sine = 0, cosine = tuning::BasisScale;
+  int32_t pitch_sine = tuning::ChasePitchSine, pitch_cosine = tuning::ChasePitchCosine;
+  int projection_y = tuning::CenterY;
   struct ShadowPolygon {
     int16_t x[8]{}, y[8]{};
     int count = 0, left = 0, right = 0, top = 0, bottom = 0;
   };
-  std::array<ShadowPolygon, 64> shadow_polygons{};
+  std::array<ShadowPolygon, tuning::ShadowCapacity> shadow_polygons{};
   int shadow_count = 0;
-  std::array<Triangle, 1800> faces{};
+  std::array<Triangle, tuning::FaceCapacity> faces{};
   std::array<uint16_t, W * H> depth_buffer{};
-  std::array<uint8_t, 512> ridge_heights{};
+  std::array<uint8_t, tuning::RidgeSamples> ridge_heights{};
   uint32_t geometry_us = 0, raster_us = 0;
   Renderer();
   int face_count = 0, dropped = 0;
@@ -151,7 +177,7 @@ struct Renderer {
   void box(Vec p, Vec size, float yaw, uint16_t color);
   void tree(Vec p, float height, int seed);
   void snow_tree(Vec p, float height, int seed);
-  void distant_snow_tree(Vec p, float height, int seed);
+  void distant_snow_tree(Vec p, float height, int seed, bool snow = true);
   void raster(const Triangle &triangle);
   void rect(int x, int y, int w, int h, uint16_t color);
   void text(int x, int y, const char *value, uint16_t color, int scale = 1);
