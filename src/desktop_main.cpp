@@ -107,6 +107,17 @@ int main(int argc, char **argv) {
     if (std::fread(&record, sizeof(record), 1, file) == 1)
       load_save(game, record);
     std::fclose(file);
+  } else if (char *legacy_prefs = SDL_GetPrefPath("picorally", "picorally")) {
+    const std::string legacy_path = std::string(legacy_prefs) + "stage-v3.best";
+    SDL_free(legacy_prefs);
+    if (FILE *file = std::fopen(legacy_path.c_str(), "rb")) {
+      SaveRecord legacy{};
+      if (std::fread(&legacy, sizeof(legacy), 1, file) == 1) {
+        load_best(game, legacy);
+        game.save_requested = game.best > 0;
+      }
+      std::fclose(file);
+    }
   }
   SDL_Window *window = SDL_CreateWindow("gravelbyte — PicoSystem preview", SDL_WINDOWPOS_CENTERED,
                                         SDL_WINDOWPOS_CENTERED, 720, 720,

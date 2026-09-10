@@ -24,11 +24,17 @@ static void render_back_frame();
 static constexpr uint32_t SaveOffset = 16 * 1024 * 1024 - FLASH_SECTOR_SIZE;
 static uint8_t save_page[((sizeof(rally::SaveData) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) *
                          FLASH_PAGE_SIZE];
-static void persist_best() {
+[[maybe_unused]] static void persist_best() {
   if (!game.save_requested)
     return;
   std::memset(save_page, 0xff, sizeof(save_page));
   auto record = rally::encode_save(game);
+  const auto *existing = reinterpret_cast<const rally::SaveData *>(XIP_BASE + SaveOffset);
+  if (std::memcmp(existing, &record, sizeof(record)) == 0) {
+    game.save_requested = false;
+    return;
+  }
+
   std::memcpy(save_page, &record, sizeof(record));
   // SDK uses core 0 only. Interrupts (including USB/audio) must not fetch from
   // XIP during erase/program; Pico SDK's flash routines execute from SRAM.

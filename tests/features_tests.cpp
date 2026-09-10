@@ -78,6 +78,7 @@ int main() {
       pixels.fill(0);
       renderer->depth_buffer.fill(0);
       renderer->face_count = 0;
+      renderer->shadow_count = 0;
       renderer->dropped = 0;
       ++renderer->render_frame;
       renderer->camera_x = 0;
