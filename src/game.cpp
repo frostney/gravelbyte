@@ -21,13 +21,13 @@ const std::array<const char *, TrackCount> TrackNames{"BRACKEN RIDGE", "SUNMEADO
                                                       "FROSTPINE PASS"};
 // Calibrated from completed deterministic public-input drives; see docs/targets.md.
 static constexpr std::array<std::array<float, SectorCount>, 9> Targets{
-    {{22.64f, 46.12f, 68.00f, 93.81f, 114.78f},
+    {{26.04f, 53.04f, 78.20f, 107.88f, 132.00f},
      {22.02f, 45.32f, 67.22f, 92.21f, 113.00f},
      {21.12f, 43.53f, 64.60f, 88.59f, 108.52f},
-     {20.68f, 40.59f, 60.10f, 80.96f, 99.71f},
+     {23.78f, 46.68f, 69.12f, 93.10f, 114.67f},
      {19.89f, 39.80f, 58.97f, 79.81f, 98.16f},
      {19.09f, 38.21f, 56.64f, 76.72f, 94.31f},
-     {23.10f, 47.70f, 70.44f, 95.00f, 114.93f},
+     {26.57f, 54.86f, 81.01f, 109.25f, 132.17f},
      {22.64f, 47.81f, 70.48f, 95.70f, 115.59f},
      {21.75f, 46.07f, 67.89f, 92.25f, 111.39f}}};
 Game::Game() {
@@ -159,6 +159,7 @@ void Game::restart() {
   camera_height = car.y;
   vertical_speed = pitch = roll = 0;
   airborne = false;
+  surface_available = true;
   jumps = 0;
   velocity = {};
   speed = steer = lateral = route_t = elapsed = impact = stranded = slip = 0;
@@ -351,6 +352,44 @@ Vec Game::scenery(int i, int sign) const {
 float Game::road_width() const {
   return road[segment].half_width * (1 - route_t) + road[segment + 1].half_width * route_t;
 }
+// Query the same triangles used by render_road, instead of extrapolating a
+// road-relative height across curved banks, rivers and finite terrain edges.
+bool Game::surface_height(Vec p, float &height) const {
+  bool found = false;
+  auto sample = [&](Vec a, Vec b, Vec c) {
+    const float d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+    if (std::abs(d) < .0001f)
+      return;
+    const float u = ((b.z - c.z) * (p.x - c.x) + (c.x - b.x) * (p.z - c.z)) / d;
+    const float v = ((c.z - a.z) * (p.x - c.x) + (a.x - c.x) * (p.z - c.z)) / d;
+    if (u < -.0001f || v < -.0001f || u + v > 1.0001f)
+      return;
+    const float y = u * a.y + v * b.y + (1 - u - v) * c.y;
+    if (!found || y > height)
+      height = y;
+    found = true;
+  };
+  for (int i = std::max(0, segment - 8); i < std::min(NodeCount - 1, segment + 9); ++i) {
+    const auto &a = terrain[i], &b = terrain[i + 1];
+    for (int strip = 0; strip < 9; ++strip) {
+      if (p.x < std::min({a[strip].x, b[strip].x, a[strip + 1].x, b[strip + 1].x}) ||
+          p.x > std::max({a[strip].x, b[strip].x, a[strip + 1].x, b[strip + 1].x}) ||
+          p.z < std::min({a[strip].z, b[strip].z, a[strip + 1].z, b[strip + 1].z}) ||
+          p.z > std::max({a[strip].z, b[strip].z, a[strip + 1].z, b[strip + 1].z}))
+        continue;
+      // The renderer walks right-hand banks from the outside inward, so
+      // their quad diagonal is reversed relative to the left-hand banks.
+      if (strip >= 6) {
+        sample(a[strip + 1], b[strip + 1], b[strip]);
+        sample(a[strip + 1], b[strip], a[strip]);
+      } else {
+        sample(a[strip], b[strip], b[strip + 1]);
+        sample(a[strip], b[strip + 1], a[strip + 1]);
+      }
+    }
+  }
+  return found;
+}
 void Game::locate() {
   float closest = 1.e20f, t_best = 0;
   int found = segment;
@@ -371,6 +410,9 @@ void Game::locate() {
   lateral = ((car.x - center.x) * d.z - (car.z - center.z) * d.x) / Step;
   ground_y =
       terrain_height(found, lateral) * (1 - t_best) + terrain_height(found + 1, lateral) * t_best;
+  surface_available = true;
+  if (std::abs(lateral) > road_width())
+    surface_available = surface_height(car, ground_y);
   if (std::abs(lateral) < road_width() + 3)
     furthest = std::max(furthest, segment);
 }
@@ -382,6 +424,7 @@ void Game::recover() {
   camera_height = car.y;
   vertical_speed = pitch = roll = 0;
   airborne = false;
+  surface_available = true;
   velocity = {};
   speed = 0;
   steer = 0;
@@ -450,6 +493,7 @@ void Game::physics(float dt, const Input &in) {
   camera_yaw += angle_delta(yaw, camera_yaw) * std::min(1.f, dt * tuning::CameraResponse);
   // Keep momentum in world space as the chassis turns: this produces real slip.
   velocity = {sn * forward + cs * side, 0, cs * forward - sn * side};
+  const Vec previous_car = car;
   car = car + velocity * dt;
   speed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
   slip = std::abs(side);
@@ -466,9 +510,33 @@ void Game::physics(float dt, const Input &in) {
         impact = .4f;
       }
       locate();
+      car.y = std::max(car.y, ground_y);
+      vertical_speed = 0;
     }
   }
-  const float ground_velocity = (ground_y - old_ground) / dt;
+  if (!surface_available) {
+    recover();
+    return;
+  }
+  const bool off_now = std::abs(lateral) > road_width();
+  const float support_step =
+      tuning::physics::OffroadStep + speed * dt * tuning::physics::MaxBankSlope;
+  if ((off || off_now) && ground_y - car.y > support_step) {
+    // A steep bank is a collision, not an instantaneous lift onto its top.
+    car = previous_car;
+    velocity = velocity * .2f;
+    speed *= .2f;
+    impact = .4f;
+    vertical_speed = 0;
+    locate();
+  }
+  const float ground_velocity =
+      clamp((ground_y - old_ground) / dt, -tuning::physics::MaxSupportSpeed,
+            tuning::physics::MaxSupportSpeed);
+  if (!airborne && (off || off_now) && car.y - ground_y > support_step) {
+    airborne = true;
+    vertical_speed = std::min(0.f, vertical_speed);
+  }
   // Convex authored crests launch the car only when road support falls away.
   const bool crest = (segment >= 155 && segment <= 157) || (segment >= 245 && segment <= 247);
   if (!airborne && crest && speed > tuning::physics::JumpSpeed &&
@@ -523,6 +591,14 @@ void Game::physics(float dt, const Input &in) {
           car.z = p.z + dz / len * tuning::physics::TreeClearance;
           velocity = velocity * tuning::physics::TreeBounce;
           impact = tuning::physics::TreeImpact;
+          locate();
+          if (!surface_available) {
+            recover();
+            return;
+          }
+          if (!airborne)
+            car.y = ground_y;
+          vertical_speed = 0;
         }
       }
     }
@@ -726,7 +802,7 @@ SaveData encode_save(const Game &game) {
   save.checksum = save_checksum(save);
   return save;
 }
-bool load_save(Game &game, const SaveData &save) {
+bool valid_save(const SaveData &save) {
   const unsigned car = save.car & tuning::SelectionMask;
   if (save.magic != tuning::SaveMagic ||
       (save.version != 1 && save.version != tuning::SaveVersion) ||
@@ -746,6 +822,12 @@ bool load_save(Game &game, const SaveData &save) {
           return false;
     }
   }
+  return true;
+}
+bool load_save(Game &game, const SaveData &save) {
+  if (!valid_save(save))
+    return false;
+  const unsigned car = save.car & tuning::SelectionMask;
   for (int i = 0; i < CarCount * TrackCount; ++i)
     for (int j = 0; j < SectorCount; ++j)
       game.records[i].splits[j] = save.times[i][j] * .001f;

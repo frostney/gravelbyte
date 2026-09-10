@@ -1,5 +1,33 @@
 # Validation
 
+## Audit, failure paths and accessible page update
+
+Seven native and seven ASan/UBSan suites pass, including 180 public-input off-road
+excursions, reversed terrain-diagonal coverage and interrupted save writes.
+Sixteen Chromium checks cover controls, accessible menus, missing/mixed releases,
+storage failure, compact layouts and JavaScript-disabled fallback. See the
+[audit remediation](audit-remediation.md), [human playtest record](playtesting.md)
+and [search metadata checks](seo.md) for details and explicit limits.
+
+Audio-enabled device coverage includes all nine car/course combinations:
+36,870 racing frames, 39.497fps weighted mean, and a worst frame of
+25.348ms. Every accepted run has zero sub-30fps frames, recoveries,
+aggregate dropped triangles and overflowing frames. The 30fps minimum is met in
+these runs; the 50fps target remains unmet. Six dry runs are retained from the
+full audio benchmark; the three snow races were repeated after a snow-only view
+distance reduction from 144m to 120m. Forty dry captures remain byte-identical.
+[Exact results, scoped source hashes and artifact identities](audit-device-results.json)
+include the rejected earlier snow timings separately.
+
+A real-device smoke run verified five alternating journal writes and successful
+selection/countdown/pause/audio/resume transitions. Both slot checksums and
+sequences were checked from flash. Original save sectors were restored and
+verified, and the normal player was reinstated at its title screen. Full flash
+backups and raw telemetry remain local under output/. The host interruption
+models do not substitute for physical power-cut testing.
+
+The sections below retain historical evidence for previous updates.
+
 ## Palm beach and mountain tunnel update
 
 The final renderer passed six native tests, six ASan/UBSan tests and three Chromium

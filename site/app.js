@@ -1,4 +1,3 @@
-import createGravelbyte from './gravelbyte.js';
 const $ = (id) => document.getElementById(id);
 const canvas = $('game'),
   ctx = canvas.getContext('2d', { alpha: false }),
@@ -16,6 +15,8 @@ let keyboard = 0,
   lastPad = 0,
   saveFailed = false;
 let audioContext, oscillator, gain;
+const menuCommands = [];
+let menuRelease = false;
 const keyBits = {
   ArrowLeft: 1,
   ArrowRight: 2,
@@ -42,7 +43,44 @@ function useInput(input) {
     touch:
       'Hold arrows to steer; Gas, Brake and Drift to drive. Go confirms; Back returns; Pause stops. Records shows splits after finishing.',
   };
-  $('controls').textContent = hints[input];
+  $('controls').replaceChildren();
+  if (input === 'keyboard') {
+    const bindings = [
+      [['←', '→'], 'steer / select'],
+      [['↑', 'Z'], 'gas'],
+      [['↓', 'X'], 'brake'],
+      [['␣'], 'drift / records'],
+      [['↵'], 'confirm / retry'],
+      [['Esc'], 'back'],
+      [['P'], 'pause'],
+      [['M'], 'sound'],
+      [['F'], 'fullscreen'],
+    ];
+    for (const [keys, action] of bindings) {
+      const item = document.createElement('span');
+      item.className = 'binding';
+      const keyGroup = document.createElement('span');
+      keyGroup.className = 'key-group';
+      for (const key of keys) {
+        const kbd = document.createElement('kbd');
+        kbd.textContent = key;
+        kbd.setAttribute(
+          'aria-label',
+          {
+            '←': 'Left arrow',
+            '→': 'Right arrow',
+            '↑': 'Up arrow',
+            '↓': 'Down arrow',
+            '␣': 'Space',
+            '↵': 'Enter',
+          }[key] ?? key,
+        );
+        keyGroup.append(kbd);
+      }
+      item.append(keyGroup, document.createTextNode(action));
+      $('controls').append(item);
+    }
+  } else $('controls').textContent = hints[input];
 }
 function startAudio() {
   try {
@@ -63,6 +101,8 @@ function startAudio() {
 function resetInputs() {
   keyboard = touchBits = pulses = lastPad = 0;
   pressedKeys.clear();
+  menuCommands.length = 0;
+  menuRelease = false;
   pointers.clear();
   document.querySelectorAll('#touch .pressed').forEach((b) => b.classList.remove('pressed'));
 }
@@ -83,10 +123,14 @@ canvas.addEventListener('pointerdown', (e) => {
   startAudio();
 });
 canvas.addEventListener('keydown', (e) => {
-  if (!(e.code in keyBits) && e.code !== 'KeyM') return;
+  if (!(e.code in keyBits) && !['KeyM', 'KeyF'].includes(e.code)) return;
   e.preventDefault();
   useInput('keyboard');
   startAudio();
+  if (e.code === 'KeyF') {
+    if (!e.repeat) fullscreen();
+    return;
+  }
   if (e.code === 'KeyM') {
     if (!e.repeat) $('mute').click();
     return;
@@ -126,31 +170,29 @@ $('play').addEventListener('click', (e) => {
   canvas.focus();
   startAudio();
   $('start-overlay').hidden = true;
-  $('pause').disabled = false;
   useInput(activeInput);
   lastTime = 0;
 });
-for (const b of document.querySelectorAll('.toolbar button'))
-  b.addEventListener('pointerdown', (e) => {
-    if (playing) e.preventDefault();
-  });
-$('pause').addEventListener('click', () => {
-  canvas.focus();
-  pulses |= 64;
+$('mute').addEventListener('pointerdown', (e) => {
+  if (playing) e.preventDefault();
 });
+function updateMute() {
+  $('mute').setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+  $('mute').setAttribute('title', muted ? 'Unmute' : 'Mute');
+  $('mute').setAttribute('aria-pressed', String(muted));
+}
 $('mute').addEventListener('click', () => {
   if (!engine) return;
   engine._gb_toggle_audio();
   muted = !!engine._gb_muted();
   save();
-  $('mute').textContent = muted ? 'Unmute' : 'Mute';
-  $('mute').setAttribute('aria-pressed', String(muted));
+  updateMute();
   if (playing) {
     canvas.focus();
     startAudio();
   }
 });
-$('fullscreen').addEventListener('click', async () => {
+async function fullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await $('stage').requestFullscreen();
@@ -159,7 +201,7 @@ $('fullscreen').addEventListener('click', async () => {
     $('save-status').textContent =
       'Fullscreen is unavailable in this browser. You can still play here.';
   }
-});
+}
 function gamepad() {
   let bits = 0;
   for (const pad of navigator.getGamepads?.() ?? []) {
@@ -202,7 +244,7 @@ function save() {
       JSON.stringify(Array.from(engine.HEAPU8.subarray(ptr, ptr + size))),
     );
     engine._gb_saved();
-    if (saveFailed) $('save-status').textContent = 'Records stay in this browser.';
+    if (saveFailed) $('save-status').textContent = '';
     saveFailed = false;
   } catch {
     engine._gb_saved();
@@ -218,17 +260,22 @@ function tick(time) {
       suspend();
     } else {
       const pad = gamepad();
+      let menuCommand = 0;
+      if (menuRelease) menuRelease = false;
+      else if (menuCommands.length) {
+        menuCommand = menuCommands.shift();
+        menuRelease = true;
+      }
       engine._gb_step(
         Math.max(0.0001, delta),
-        keyboard | touchBits | pulses | pad,
+        keyboard | touchBits | pulses | pad | menuCommand,
         { keyboard: 1, gamepad: 2, touch: 3 }[activeInput],
       );
       pulses = 0;
     }
     const mode = engine._gb_mode();
     muted = !!engine._gb_muted();
-    $('mute').textContent = muted ? 'Unmute' : 'Mute';
-    $('mute').setAttribute('aria-pressed', String(muted));
+    updateMute();
     canvas.dataset.mode = String(mode);
     canvas.dataset.car = String(engine._gb_car());
     canvas.dataset.track = String(engine._gb_track());
@@ -241,8 +288,14 @@ function tick(time) {
       pauseTouch.textContent = mode === 5 ? 'Resume' : 'Pause';
       document.querySelectorAll('.menu-control').forEach((b) => (b.hidden = race));
       $('records').hidden = mode !== 6;
-      $('pause').textContent = mode === 5 ? 'Resume' : 'Pause';
+      const menuHadFocus = $('accessible-menu').contains(document.activeElement);
+      updateAccessibleMenu(mode);
+      if (mode === 3 && menuHadFocus) canvas.focus();
+      else if (menuHadFocus && document.activeElement === document.body) $('menu-confirm').focus();
     }
+    const status = engine.UTF8ToString(engine._gb_status());
+    if ($('game-status').textContent !== status) $('game-status').textContent = status;
+    if (mode === 2) $('menu-confirm').setAttribute('aria-disabled', String(!engine._gb_unlocked()));
     if (gain) {
       gain.gain.setTargetAtTime(
         !muted && (mode === 0 || mode === 4 || mode === 6) ? 0.035 : 0,
@@ -260,9 +313,45 @@ function tick(time) {
   }
   requestAnimationFrame(tick);
 }
+function menuInput(bit) {
+  if (engine && playing) menuCommands.push(bit);
+}
+for (const [id, bit] of [
+  ['menu-previous', 1],
+  ['menu-next', 2],
+  ['menu-confirm', 32],
+  ['menu-back', 128],
+])
+  $(id).addEventListener('click', () => menuInput(bit));
+function updateAccessibleMenu(mode) {
+  $('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(mode);
+  const select = mode === 1 || mode === 2;
+  for (const id of ['menu-previous', 'menu-next']) $(id).hidden = !select;
+  $('menu-previous').textContent = mode === 1 ? 'Previous car' : 'Previous track';
+  $('menu-next').textContent = mode === 1 ? 'Next car' : 'Next track';
+  $('menu-confirm').textContent =
+    mode === 0 ? 'Choose car' : mode === 1 ? 'Choose track' : mode === 2 ? 'Start race' : 'Retry';
+  $('menu-confirm').setAttribute('aria-disabled', 'false');
+  $('menu-back').hidden = mode === 0;
+  $('menu-back').textContent =
+    mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : 'Choose car';
+  $('menu-aux').hidden = mode !== 6 && mode !== 5;
+  $('menu-aux').textContent = mode === 5 ? 'Resume' : 'Toggle checkpoint records';
+}
+$('menu-aux').addEventListener('click', () => menuInput(lastMode === 5 ? 64 : 256));
 useInput(activeInput);
 try {
+  const { default: createGravelbyte } = await import('./gravelbyte.js');
   engine = await createGravelbyte();
+  const expected = document.querySelector('meta[name="gravelbyte-build"]').content;
+  if (
+    typeof engine._gb_build_id !== 'function' ||
+    engine.UTF8ToString(engine._gb_build_id()) !== expected
+  ) {
+    const error = new Error('Game build mismatch');
+    error.code = 'BUILD_MISMATCH';
+    throw error;
+  }
   try {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -285,11 +374,12 @@ try {
   $('play').textContent = 'Play Gravelbyte';
   $('load-status').textContent = 'Ready to play.';
   muted = !!engine._gb_muted();
-  $('mute').textContent = muted ? 'Unmute' : 'Mute';
-  $('mute').setAttribute('aria-pressed', String(muted));
+  updateMute();
   requestAnimationFrame(tick);
 } catch (error) {
   $('load-status').textContent =
-    'The game could not load. Please reload the page or download the PicoSystem version.';
+    error.code === 'BUILD_MISMATCH'
+      ? 'The game files are from different builds. Reload the page for a matching release.'
+      : 'The game could not load. Please reload the page or download the PicoSystem version.';
   console.error(error);
 }

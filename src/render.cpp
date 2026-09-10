@@ -317,7 +317,7 @@ void Renderer::snow_tree(Vec p, float height, int seed) {
       triangle(d, a, tip, col);
   }
 }
-// Beyond 84m the two branch tiers occupy only a handful of pixels. Keep that
+// At distance the two branch tiers occupy only a handful of pixels. Keep that
 // silhouette and the snow cap with camera-facing world geometry, avoiding the
 // hidden volume work. Nearby conifers retain the full 3D model.
 void Renderer::distant_snow_tree(Vec p, float height, int seed, bool snow) {
@@ -420,10 +420,22 @@ static void time_text(char *out, size_t size, float seconds) {
 void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics) {
   const uint32_t geometry_start = profile_time();
   pixels = target;
-  face_count = 0;
-  shadow_count = 0;
-  dropped = 0;
+  face_count = shadow_count = dropped = 0;
   depth_buffer.fill(0);
+  const float view_yaw = prepare_camera(g);
+  prepare_shadow(g);
+  render_background(g, view_yaw);
+  if (g.mode != Mode::CarSelect)
+    render_road(g, view_yaw);
+  render_car(g);
+  geometry_us = profile_time() - geometry_start;
+  const uint32_t raster_start = profile_time();
+  for (int i = 0; i < face_count; ++i)
+    raster(faces[i]);
+  raster_us = profile_time() - raster_start;
+  render_ui(g, fps, diagnostics);
+}
+float Renderer::prepare_camera(const Game &g) {
   const bool showroom = g.mode == Mode::CarSelect;
   projection_y = showroom ? tuning::ShowroomCenterY : tuning::CenterY;
   const bool cinematic = g.mode == Mode::Title || g.mode == Mode::Finished;
@@ -473,6 +485,10 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
       entry.frame = 0;
     render_frame = 1;
   }
+  return view_yaw;
+}
+void Renderer::prepare_shadow(const Game &g) {
+  const bool showroom = g.mode == Mode::CarSelect;
   shadow_center = g.car;
   shadow_sin = std::sin(showroom ? g.menu_rotation : g.yaw);
   shadow_cos = std::cos(showroom ? g.menu_rotation : g.yaw);
@@ -484,7 +500,9 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
   shadow_max_x = g.car.x + extent_x;
   shadow_min_z = g.car.z - extent_z;
   shadow_max_z = g.car.z + extent_z;
-
+}
+void Renderer::render_background(const Game &g, float view_yaw) {
+  const bool showroom = g.mode == Mode::CarSelect;
   // Fog-coloured sky, distant wooded ridge; foreground is real world geometry.
   rect(0, 0, W, H, color(9, 10, 10));
   rect(0, 0, W, 24, color(10, 11, 12));
@@ -519,13 +537,9 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
     rect(0, 0, W, H, color(1, 2, 3));
     rect(0, 74, W, 46, color(2, 3, 4));
   }
-  bool reverse_view = std::cos(view_yaw - g.road[g.segment].heading) < 0;
-  const int behind = reverse_view ? tuning::RoadAhead : tuning::RoadBehind;
-  const int ahead = reverse_view ? tuning::RoadBehind : tuning::RoadAhead;
-  const int first = std::max(0, g.segment - behind),
-            last = std::min(NodeCount - 1, g.segment + ahead);
-  if (!showroom && g.selected_track == 2 && last >= tuning::TunnelStart &&
-      first <= tuning::TunnelEnd) {
+}
+void Renderer::render_mountain(const Game &g, int first, int last) {
+  if (g.selected_track == 2 && last >= tuning::TunnelStart && first <= tuning::TunnelEnd) {
     // Broad, cached rock/snow panels enclose the detailed tunnel interior.
     for (int k = 0; k < tuning::MountainSections; ++k) {
       const auto &a = g.mountain[k], &b = g.mountain[k + 1];
@@ -548,11 +562,17 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
       }
     }
   }
-  for (int i = first; !showroom && i < last; ++i) {
+}
+void Renderer::render_road(const Game &g, float view_yaw) {
+  bool reverse_view = std::cos(view_yaw - g.road[g.segment].heading) < 0;
+  const int view_distance = g.selected_track == 2 ? tuning::SnowRoadAhead : tuning::RoadAhead;
+  const int behind = reverse_view ? view_distance : tuning::RoadBehind;
+  const int ahead = reverse_view ? tuning::RoadBehind : view_distance;
+  const int first = std::max(0, g.segment - behind),
+            last = std::min(NodeCount - 1, g.segment + ahead);
+  render_mountain(g, first, last);
+  for (int i = first; i < last; ++i) {
     shadow_enabled = std::abs(i - g.segment) <= 2;
-    auto at = [&](int j, float side, float rise = 0.f) {
-      return g.roadside(j, side) + Vec{0, rise, 0};
-    };
     const int zone = Game::section(i);
     const uint16_t grasses[] = {color(4, 6, 3), color(7, 7, 4), color(6, 6, 5), color(3, 6, 4)};
     const uint16_t gravels[] = {color(9, 9, 7), color(10, 9, 7), color(8, 8, 8), color(8, 8, 6)};
@@ -588,111 +608,128 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
     for (int strip = 3; strip < 6; ++strip)
       ground_quad(a[strip], b[strip], b[strip + 1], a[strip + 1],
                   shade(roadcol, strip == 4 ? -1 : 0));
-    if (i % 3 == 0)
-      for (int sign : {-1, 1}) {
-        if (!g.has_scenery(i, sign))
-          continue;
-        Vec p = g.scenery(i, sign);
-        if (g.selected_track == 2 ||
-            (g.selected_track == 0 && (zone == 0 || zone == 3 || (zone == 1 && i % 12 == 0))) ||
-            (g.selected_track == 1 && i % 6 == 0)) {
-          const float height = 5.f + float((i * 7) % 4);
-          bool distant = false;
-          {
-            const auto center = transform(p + Vec{0, height * .5f, 0});
-            const int radius = int(height * .75f * tuning::WorldScale);
-            // Conservative sphere/plane rejection keeps complete silhouettes
-            // while avoiding geometry work for trees outside the camera view.
-            if (center.z + radius < tuning::NearPlane || center.z - radius > tuning::FarPlane ||
-                std::abs(center.x) * tuning::FocalLength >
-                    center.z * tuning::CenterX + radius * 105 ||
-                center.y * tuning::FocalLength > center.z * projection_y + radius * 101 ||
-                -center.y * tuning::FocalLength > center.z * (H - projection_y) + radius * 109)
-              continue;
-            distant = center.z > tuning::SceneryDetailDistance * tuning::WorldScale;
-          }
-          if (g.selected_track == 1)
-            palm_tree(p, height, i);
-          else if (distant)
-            distant_snow_tree(p, height, i, g.selected_track == 2);
-          else
-            snow_tree(p, height, i);
-          if (g.selected_track == 2 && !distant) {
-            Vec top = p + Vec{0, 5.2f + float((i * 7) % 4), 0};
-            triangle(top, p + Vec{-1.2f, 3.8f, 0}, p + Vec{1.2f, 3.8f, 0}, color(14, 15, 15));
-          }
-        } else {
-          // Replace trees with heather/rock outcrops on exposed sections.
-          float r = zone == 2 ? 1.4f : .8f, h = zone == 2 ? 2.f : .6f;
-          Vec a = p + Vec{-r, 0, -r}, b = p + Vec{r, 0, -r}, c = p + Vec{r, 0, r},
-              d = p + Vec{-r, 0, r};
-          Vec top = p + Vec{-.3f, h, .2f};
-          uint16_t rock = zone == 2 ? color(7, 8, 8) : color(6, 5, 5);
-          triangle(a, b, top, shade(rock, -2));
-          triangle(b, c, top, rock);
-          triangle(c, d, top, shade(rock, 1));
-          triangle(d, a, top, shade(rock, -1));
+    render_scenery(g, i);
+    render_track_objects(g, i);
+  }
+}
+void Renderer::render_scenery(const Game &g, int i) {
+  const int zone = Game::section(i);
+  if (i % 3 == 0)
+    for (int sign : {-1, 1}) {
+      if (!g.has_scenery(i, sign))
+        continue;
+      Vec p = g.scenery(i, sign);
+      if (g.selected_track == 2 ||
+          (g.selected_track == 0 && (zone == 0 || zone == 3 || (zone == 1 && i % 12 == 0))) ||
+          (g.selected_track == 1 && i % 6 == 0)) {
+        const float height = 5.f + float((i * 7) % 4);
+        bool distant = false;
+        {
+          const auto center = transform(p + Vec{0, height * .5f, 0});
+          const int radius = int(height * .75f * tuning::WorldScale);
+          // Conservative sphere/plane rejection keeps complete silhouettes
+          // while avoiding geometry work for trees outside the camera view.
+          if (center.z + radius < tuning::NearPlane || center.z - radius > tuning::FarPlane ||
+              std::abs(center.x) * tuning::FocalLength >
+                  center.z * tuning::CenterX + radius * 105 ||
+              center.y * tuning::FocalLength > center.z * projection_y + radius * 101 ||
+              -center.y * tuning::FocalLength > center.z * (H - projection_y) + radius * 109)
+            continue;
+          // Leave frame-time headroom around the mountain portal by simplifying
+          // distant snow trees; road geometry and nearby tree detail are retained.
+          const float detail_distance = g.selected_track == 2 ? tuning::SnowSceneryDetailDistance
+                                                              : tuning::SceneryDetailDistance;
+          distant = center.z > detail_distance * tuning::WorldScale;
         }
-      }
-    if (g.bridge(i) || g.tunnel(i)) {
-      const bool tunnel = g.tunnel(i);
-      for (int sign : {-1, 1}) {
-        Vec a = at(i, sign * (g.road[i].half_width + tuning::RailMargin));
-        Vec b = at(i + 1, sign * (g.road[i + 1].half_width + tuning::RailMargin));
-        float wall_height = tunnel ? tuning::TunnelHeight : 1.f;
-        uint16_t wall = tunnel ? color(5, 6, 7) : color(8, 7, 5);
-        quad(a, b, b + Vec{0, wall_height, 0}, a + Vec{0, wall_height, 0}, wall);
-        if (!tunnel) {
-          box(a, {.25f, 1.25f, .25f}, g.road[i].heading, color(12, 11, 8));
-          quad(a, b, b + Vec{0, -1.2f, 0}, a + Vec{0, -1.2f, 0}, color(5, 5, 4));
-          if (i % 3 == 0)
-            box(a + Vec{0, -tuning::RiverDrop, 0}, {.7f, tuning::RiverDrop, .7f}, g.road[i].heading,
-                color(6, 6, 5));
+        if (g.selected_track == 1)
+          palm_tree(p, height, i);
+        else if (distant)
+          distant_snow_tree(p, height, i, g.selected_track == 2);
+        else
+          snow_tree(p, height, i);
+        if (g.selected_track == 2 && !distant) {
+          Vec top = p + Vec{0, 5.2f + float((i * 7) % 4), 0};
+          triangle(top, p + Vec{-1.2f, 3.8f, 0}, p + Vec{1.2f, 3.8f, 0}, color(14, 15, 15));
         }
-      }
-      if (tunnel) {
-        Vec a = at(i, -g.road[i].half_width - tuning::RailMargin, tuning::TunnelHeight);
-        Vec b = at(i, g.road[i].half_width + tuning::RailMargin, tuning::TunnelHeight);
-        Vec c = at(i + 1, g.road[i + 1].half_width + tuning::RailMargin, tuning::TunnelHeight);
-        Vec d = at(i + 1, -g.road[i + 1].half_width - tuning::RailMargin, tuning::TunnelHeight);
-        quad(a, b, c, d, color(4, 5, 6));
-        if (i % 3 == 0) {
-          Vec lamp = at(i, 0, tuning::TunnelHeight - .12f);
-          box(lamp, {1.2f, .06f, .5f}, g.road[i].heading, color(15, 14, 9));
-        }
+      } else {
+        // Replace trees with heather/rock outcrops on exposed sections.
+        float r = zone == 2 ? 1.4f : .8f, h = zone == 2 ? 2.f : .6f;
+        Vec a = p + Vec{-r, 0, -r}, b = p + Vec{r, 0, -r}, c = p + Vec{r, 0, r},
+            d = p + Vec{-r, 0, r};
+        Vec top = p + Vec{-.3f, h, .2f};
+        uint16_t rock = zone == 2 ? color(7, 8, 8) : color(6, 5, 5);
+        triangle(a, b, top, shade(rock, -2));
+        triangle(b, c, top, rock);
+        triangle(c, d, top, shade(rock, 1));
+        triangle(d, a, top, shade(rock, -1));
       }
     }
-    // Sector gates make the timing lines visible before reaching them.
-    if (std::find(SectorEnds.begin(), SectorEnds.end(), i) != SectorEnds.end()) {
-      for (int sign : {-1, 1}) {
-        Vec p = at(i, sign * (g.road[i].half_width + .55f));
-        box(p, {.24f, 3.2f, .24f}, g.road[i].heading, color(14, 12, 3));
-        Vec right = g.road[i].right * .8f;
-        quad(p + Vec{0, 3.2f, 0}, p + right + Vec{0, 3.2f, 0}, p + right + Vec{0, 2.1f, 0},
-             p + Vec{0, 2.1f, 0}, color(3, 4, 10));
+}
+void Renderer::render_track_objects(const Game &g, int i) {
+  auto at = [&](int j, float side, float rise = 0.f) {
+    return g.roadside(j, side) + Vec{0, rise, 0};
+  };
+  if (g.bridge(i) || g.tunnel(i)) {
+    const bool tunnel = g.tunnel(i);
+    for (int sign : {-1, 1}) {
+      Vec a = at(i, sign * (g.road[i].half_width + tuning::RailMargin));
+      Vec b = at(i + 1, sign * (g.road[i + 1].half_width + tuning::RailMargin));
+      float wall_height = tunnel ? tuning::TunnelHeight : 1.f;
+      uint16_t wall = tunnel ? color(5, 6, 7) : color(8, 7, 5);
+      quad(a, b, b + Vec{0, wall_height, 0}, a + Vec{0, wall_height, 0}, wall);
+      if (!tunnel) {
+        box(a, {.25f, 1.25f, .25f}, g.road[i].heading, color(12, 11, 8));
+        quad(a, b, b + Vec{0, -1.2f, 0}, a + Vec{0, -1.2f, 0}, color(5, 5, 4));
+        if (i % 3 == 0)
+          box(a + Vec{0, -tuning::RiverDrop, 0}, {.7f, tuning::RiverDrop, .7f}, g.road[i].heading,
+              color(6, 6, 5));
       }
     }
-    if (i % 6 == 0)
-      for (int sign : {-1, 1}) {
-        Vec p = at(i, sign * (g.road[i].half_width + .6f));
-        const auto marker = transform(p + Vec{0, .45f, 0});
-        if (marker.z < -64 || std::abs(marker.x) > marker.z + 128)
-          continue;
-        box(p, {.16f, .85f, .16f}, 0, color(13, 13, 11));
-        box(p + Vec{0, .6f, 0}, {.2f, .24f, .2f}, 0, color(12, 3, 2));
+    if (tunnel) {
+      Vec a = at(i, -g.road[i].half_width - tuning::RailMargin, tuning::TunnelHeight);
+      Vec b = at(i, g.road[i].half_width + tuning::RailMargin, tuning::TunnelHeight);
+      Vec c = at(i + 1, g.road[i + 1].half_width + tuning::RailMargin, tuning::TunnelHeight);
+      Vec d = at(i + 1, -g.road[i + 1].half_width - tuning::RailMargin, tuning::TunnelHeight);
+      quad(a, b, c, d, color(4, 5, 6));
+      if (i % 3 == 0) {
+        Vec lamp = at(i, 0, tuning::TunnelHeight - .12f);
+        box(lamp, {1.2f, .06f, .5f}, g.road[i].heading, color(15, 14, 9));
       }
-    if (i == NodeCount - 4 || i == 2) {
-      Vec p = at(i, 0, .035f);
-      for (int k = 0; k < 10; ++k) {
-        float width = g.road[i].half_width;
-        float l = -width + k * width / 5, r = l + width / 5;
-        Vec a = at(i, l, .035f), b = at(i, r, .035f);
-        Vec d = {std::sin(g.road[i].heading) * .7f, 0, std::cos(g.road[i].heading) * .7f};
-        quad(a, b, b + d, a + d, k % 2 ? color(2, 3, 3) : color(14, 14, 12));
-      }
-      (void)p;
     }
   }
+  // Sector gates make the timing lines visible before reaching them.
+  if (std::find(SectorEnds.begin(), SectorEnds.end(), i) != SectorEnds.end()) {
+    for (int sign : {-1, 1}) {
+      Vec p = at(i, sign * (g.road[i].half_width + .55f));
+      box(p, {.24f, 3.2f, .24f}, g.road[i].heading, color(14, 12, 3));
+      Vec right = g.road[i].right * .8f;
+      quad(p + Vec{0, 3.2f, 0}, p + right + Vec{0, 3.2f, 0}, p + right + Vec{0, 2.1f, 0},
+           p + Vec{0, 2.1f, 0}, color(3, 4, 10));
+    }
+  }
+  if (i % 6 == 0)
+    for (int sign : {-1, 1}) {
+      Vec p = at(i, sign * (g.road[i].half_width + .6f));
+      const auto marker = transform(p + Vec{0, .45f, 0});
+      if (marker.z < -64 || std::abs(marker.x) > marker.z + 128)
+        continue;
+      box(p, {.16f, .85f, .16f}, 0, color(13, 13, 11));
+      box(p + Vec{0, .6f, 0}, {.2f, .24f, .2f}, 0, color(12, 3, 2));
+    }
+  if (i == NodeCount - 4 || i == 2) {
+    Vec p = at(i, 0, .035f);
+    for (int k = 0; k < 10; ++k) {
+      float width = g.road[i].half_width;
+      float l = -width + k * width / 5, r = l + width / 5;
+      Vec a = at(i, l, .035f), b = at(i, r, .035f);
+      Vec d = {std::sin(g.road[i].heading) * .7f, 0, std::cos(g.road[i].heading) * .7f};
+      quad(a, b, b + d, a + d, k % 2 ? color(2, 3, 3) : color(14, 14, 12));
+    }
+    (void)p;
+  }
+}
+void Renderer::render_car(const Game &g) {
+  const bool showroom = g.mode == Mode::CarSelect;
   const float car_sin = shadow_sin, car_cos = shadow_cos;
   const float ps = std::sin(showroom ? 0 : g.pitch), pc = std::cos(showroom ? 0 : g.pitch),
               rs = std::sin(showroom ? 0 : g.roll), rc = std::cos(showroom ? 0 : g.roll);
@@ -771,12 +808,8 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
   }
   if (g.selected_car != 0)
     carbox({0, 1.04f, -1.38f}, {1.86f, .12f, .32f}, shade(blue, -1));
-  // Depth test preserves visibility through tight bends, terrain and car faces.
-  geometry_us = profile_time() - geometry_start;
-  const uint32_t raster_start = profile_time();
-  for (int i = 0; i < face_count; ++i)
-    raster(faces[i]);
-  raster_us = profile_time() - raster_start;
+}
+void Renderer::render_ui(const Game &g, int fps, bool diagnostics) {
   const uint16_t white = color(15, 15, 13), yellow = color(15, 13, 3), dark = color(1, 2, 2);
   char buffer[40];
   const char *confirm = g.controls == Controls::Pico       ? "A"

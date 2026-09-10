@@ -37,6 +37,11 @@ the browser's mute button. The setting persists alongside records.
 
 The browser supports keyboard, standard gamepads and simultaneous touch controls.
 Hints follow the active input; touch controls appear only for touch play.
+Keyboard instructions use labelled keycaps. Sound and GitHub use icons; press
+F for fullscreen. Car/track choices and lock requirements are announced through
+an accessible status region, with native menu buttons available to keyboard and
+assistive-technology users. Nonvisual racing itself has not been established.
+Start with Mica; brake before tight bends, release as you turn, and drift sparingly.
 
 | Action | Keyboard | Standard gamepad | PicoSystem |
 | --- | --- | --- | --- |
@@ -95,13 +100,18 @@ cmake --build build-pico -j
 
 CI pins Arm GNU 15.3.Rel1 (GCC 15.3.1), matching the device measurements.
 Pinned SDK revisions and build steps live in `.github/workflows/build.yml`.
-Run CMake again after editing static site files to copy them into the web build.
+The package-web target copies static files on every web build. Release assets
+are grouped beneath assets/<commit>/; the loader checks the executable build ID.
+Reconfigure after changing commits so the embedded build ID is refreshed.
 Native macOS output is `build/gravelbyte.app`; Linux output is `build/gravelbyte`.
 PicoSystem output is `build-pico/gravelbyte.uf2`.
 
 CI checks formatting, native contracts, all nine complete drives, terrain
 clearance and browser integration. Successful main builds publish GitHub Pages;
 the playable WASM, downloadable UF2, version and checksums come from one commit.
+The stable gravelbyte.uf2 download URL remains available. SHA256SUMS lists the
+versioned asset paths. Pico saves alternate between two flash sectors, preserving
+the previous valid save during an erase or write. Legacy records migrate on save.
 Pull requests build/test without deployment.
 
 ## Design and validation
@@ -115,7 +125,8 @@ tests cannot establish device performance. See [validation](docs/validation.md)
 for measured results and [target calibration](docs/targets.md) for reference runs.
 
 `-DGRAVELBYTE_BENCHMARK=ON` builds an automated nine-race device diagnostic that
-never writes records. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
+never writes records. Diagnostics enable audio regardless of the saved mute preference
+and report that workload in each result. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
 course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
 `-DGRAVELBYTE_SMOKE=ON` builds a separate real-save diagnostic: it toggles sound,

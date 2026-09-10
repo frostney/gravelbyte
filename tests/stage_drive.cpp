@@ -76,7 +76,27 @@ int main(int argc, char **argv) {
         if (game.splits[i] <= game.splits[i - 1])
           return 1;
       Game restored;
+      if (game.elapsed >= game.default_splits().back()) {
+        std::fprintf(stderr,
+                     "Reference driver cannot beat target: track=%d car=%d time=%.3f target=%.3f\n",
+                     track, car, game.elapsed, game.default_splits().back());
+        return 1;
+      }
+      // Satisfy earlier stages with actual completed runs, then verify that this
+      // run's persisted result unlocks the next stage for every car.
+      for (int earlier = 0; earlier < track; ++earlier) {
+        Game prior;
+        prior.select(car, earlier);
+        prior.mode = Mode::Racing;
+        for (int frame = 0; frame < 15000 && prior.mode != Mode::Finished; ++frame)
+          prior.tick(.02f, test_driver(prior));
+        if (prior.mode != Mode::Finished || prior.elapsed >= prior.default_splits().back())
+          return 1;
+        game.records[earlier * CarCount + car] = prior.records[earlier * CarCount + car];
+      }
       if (!load_save(restored, encode_save(game)))
+        return 1;
+      if (track + 1 < TrackCount && !restored.unlocked(track + 1))
         return 1;
       restored.restart();
       if (std::abs(restored.best - game.elapsed) > .002f ||

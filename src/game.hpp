@@ -65,7 +65,7 @@ struct Game {
   float split_message = 0, split_delta = 0;
   std::array<float, SectorCount> splits{}, best_splits{}, reference_splits = DefaultSplits;
   int split_count = 0, jumps = 0;
-  bool airborne = false;
+  bool airborne = false, surface_available = true;
   int segment = 0, furthest = 0, recoveries = 0;
   Mode mode = Mode::Title, resume_mode = Mode::Racing;
   bool new_record = false, save_requested = false;
@@ -102,6 +102,7 @@ struct Game {
   void tick(float dt, const Input &in);
   void physics(float dt, const Input &in);
   void locate();
+  bool surface_height(Vec position, float &height) const;
   void recover();
   Vec roadside(int i, float side) const;
   float terrain_height(int i, float side) const;
@@ -118,6 +119,7 @@ struct SaveData {
   uint32_t checksum = 0;
 };
 SaveData encode_save(const Game &game);
+bool valid_save(const SaveData &save);
 bool load_save(Game &game, const SaveData &save);
 struct SaveRecord {
   uint32_t magic, version, milliseconds, checksum;
@@ -128,6 +130,16 @@ SaveRecord encode_best(float seconds, const std::array<float, SectorCount> &spli
 float decode_best(const SaveRecord &record);
 void load_best(Game &game, const SaveRecord &record);
 
+struct GeometryTelemetry {
+  uint32_t frames = 0, dropped = 0, overflow_frames = 0;
+  void observe(int frame_dropped) {
+    ++frames;
+    if (frame_dropped > 0) {
+      dropped += uint32_t(frame_dropped);
+      ++overflow_frames;
+    }
+  }
+};
 struct Renderer {
   struct Triangle {
     int16_t x[3], y[3];
@@ -165,6 +177,15 @@ struct Renderer {
   Vec camera{};
   float cam_sin = 0, cam_cos = 1;
   void render(const Game &game, uint16_t *target, int fps = 0, bool diagnostics = false);
+  float prepare_camera(const Game &game);
+  void prepare_shadow(const Game &game);
+  void render_background(const Game &game, float view_yaw);
+  void render_mountain(const Game &game, int first, int last);
+  void render_road(const Game &game, float view_yaw);
+  void render_scenery(const Game &game, int node);
+  void render_track_objects(const Game &game, int node);
+  void render_car(const Game &game);
+  void render_ui(const Game &game, int fps, bool diagnostics);
   Vec shadow_center{};
   float shadow_sin = 0, shadow_cos = 1, shadow_width = 1.05f, shadow_length = 1.8f;
   bool shadow_enabled = false;

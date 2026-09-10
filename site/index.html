@@ -8,11 +8,22 @@
       name="description"
       content="Play Gravelbyte in your browser or download it for PicoSystem."
     />
-    <title>Gravelbyte</title>
+    <title>Gravelbyte — play the rally game online or on PicoSystem</title>
+    <meta name="gravelbyte-build" content="BUILD_ID" />
+    <link rel="canonical" href="https://frostney.github.io/gravelbyte/" />
+    <meta property="og:title" content="Gravelbyte" />
+    <meta
+      property="og:description"
+      content="Play the rally game in your browser or download it for PicoSystem."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://frostney.github.io/gravelbyte/" />
+    <meta name="twitter:card" content="summary" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main>
+      <h1 class="sr-only">Gravelbyte</h1>
       <section class="play" aria-label="Play Gravelbyte">
         <div id="stage" class="stage">
           <canvas
@@ -20,11 +31,18 @@
             width="120"
             height="120"
             tabindex="0"
-            aria-label="Gravelbyte rally game. Controls are listed beside or below the game."
+            role="application"
+            aria-label="Gravelbyte rally game"
+            aria-describedby="controls game-status"
           ></canvas>
           <div id="start-overlay">
             <button id="play" disabled>Loading game…</button>
             <p id="load-status" role="status">Preparing the rally</p>
+            <noscript
+              ><p class="no-script">
+                Enable JavaScript to play here, or download the PicoSystem version.
+              </p></noscript
+            >
           </div>
           <div id="touch" hidden aria-label="Touch controls">
             <div class="steering">
@@ -42,22 +60,62 @@
             <button data-bit="64" class="touch-pause race-control">Pause</button>
           </div>
         </div>
-        <div class="toolbar">
-          <div>
-            <button id="pause" disabled>Pause</button
-            ><button id="mute" aria-pressed="false">Mute</button
-            ><button id="fullscreen">Fullscreen</button>
-          </div>
-          <a href="https://github.com/frostney/gravelbyte">GitHub ↗</a>
-        </div>
       </section>
       <aside aria-label="Instructions">
         <section aria-labelledby="controls-heading">
-          <h2 id="controls-heading"><span id="input-label">Keyboard</span> controls</h2>
-          <p id="controls" class="controls">
+          <div class="instructions-heading">
+            <h2 id="controls-heading"><span id="input-label">Keyboard</span> controls</h2>
+            <div class="links">
+              <button
+                id="mute"
+                class="icon-button"
+                aria-label="Mute"
+                title="Mute"
+                aria-pressed="false"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M11 5 6 9H3v6h3l5 4Z" />
+                  <g class="sound-on"><path d="M15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14" /></g>
+                  <path class="sound-off" d="m16 9 6 6m0-6-6 6" />
+                </svg>
+              </button>
+              <a
+                class="icon-button"
+                href="https://github.com/frostney/gravelbyte"
+                aria-label="GitHub"
+                title="GitHub"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M9 19c-4 1-4-2-6-2m12 5v-4c0-1 .2-2-1-2.5 4-.5 6-2 6-6a5 5 0 0 0-1.5-3.5c.2-1 .2-2-.3-3-1 0-2.5.6-3.5 1.3a12 12 0 0 0-6 0C7.5 3.6 6 3 5 3c-.5 1-.5 2-.3 3A5 5 0 0 0 3 9.5c0 4 2 5.5 6 6-1 .5-1 1.5-1 2.5v4"
+                  />
+                </svg>
+              </a>
+            </div>
+          </div>
+          <div id="controls" class="controls">
             ← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause
+          </div>
+          <p class="driving-tip">
+            Start with Mica. Brake before tight bends; release as you turn. Drift sparingly. Beat a
+            stage target to unlock the next.
           </p>
-          <p id="save-status" role="status" class="save-status">Records stay in this browser.</p>
+          <p id="save-status" role="status" class="save-status"></p>
+          <p
+            id="game-status"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></p>
+          <fieldset id="accessible-menu" class="assistive-controls" hidden>
+            <legend>Game menu controls</legend>
+            <button id="menu-previous">Previous</button>
+            <button id="menu-next">Next</button>
+            <button id="menu-confirm">Confirm</button>
+            <button id="menu-back">Back</button>
+            <button id="menu-aux">Records</button>
+          </fieldset>
         </section>
         <section class="install" aria-label="PicoSystem download and setup">
           <a class="download" href="gravelbyte.uf2" download>Download for PicoSystem ↓</a>
@@ -76,6 +134,14 @@
         </section>
       </aside>
     </main>
-    <script type="module" src="app.js"></script>
+
+    <script
+      type="module"
+      src="app.js"
+      onerror="
+        document.getElementById('load-status').textContent =
+          'The game could not load. Please reload or download the PicoSystem version.'
+      "
+    ></script>
   </body>
 </html>
