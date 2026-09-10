@@ -1,0 +1,152 @@
+{
+  "source_commit": "1ede557",
+  "races": [
+    {
+      "track": 0,
+      "car": 0,
+      "frames": 4194,
+      "mean_us": 25319,
+      "max_us": 25344,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106197,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4194,
+      "audio": 1
+    },
+    {
+      "track": 0,
+      "car": 1,
+      "frames": 4358,
+      "mean_us": 25315,
+      "max_us": 25336,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 110333,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4358,
+      "audio": 1
+    },
+    {
+      "track": 0,
+      "car": 2,
+      "frames": 4222,
+      "mean_us": 25317,
+      "max_us": 25341,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106897,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4222,
+      "audio": 1
+    },
+    {
+      "track": 1,
+      "car": 0,
+      "frames": 3644,
+      "mean_us": 25317,
+      "max_us": 25340,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92269,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 3644,
+      "audio": 1
+    },
+    {
+      "track": 1,
+      "car": 1,
+      "frames": 3784,
+      "mean_us": 25315,
+      "max_us": 25337,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 95806,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 3784,
+      "audio": 1
+    },
+    {
+      "track": 1,
+      "car": 2,
+      "frames": 3670,
+      "mean_us": 25315,
+      "max_us": 25336,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 92920,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 3670,
+      "audio": 1
+    },
+    {
+      "track": 2,
+      "car": 0,
+      "frames": 4212,
+      "mean_us": 25317,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 106648,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4212,
+      "audio": 1
+    },
+    {
+      "track": 2,
+      "car": 1,
+      "frames": 4457,
+      "mean_us": 25317,
+      "max_us": 25339,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 112848,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4457,
+      "audio": 1
+    },
+    {
+      "track": 2,
+      "car": 2,
+      "frames": 4334,
+      "mean_us": 25315,
+      "max_us": 25336,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 109727,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 4334,
+      "audio": 1
+    }
+  ],
+  "frames": 36875,
+  "weighted_fps": 39.5001621734726,
+  "clock_hz": [
+    250000000
+  ],
+  "sampled_update_us": {
+    "minimum": 12212,
+    "median": 18668,
+    "maximum": 23667
+  },
+  "max_render_us": 23662,
+  "sampled_wait_percent": {
+    "minimum": 6,
+    "median": 26,
+    "maximum": 51
+  },
+  "sha256": {
+    "build-pico/gravelbyte.uf2": "015791098e64ccec34b406f3260f23f51d209ac08478383d272e645392003818",
+    "build-pico-benchmark/gravelbyte.uf2": "99ec307ec58cd8227c4ac225d525df4ee938dd488206690e9fc1bdcba1b8d7e1",
+    "output/foundations/backups/before-foundations.uf2": "677013c8a25d7fbf7cfc8d398f25007610cd50f43dd89cf7edf4f40debbe6421"
+  }
+}
