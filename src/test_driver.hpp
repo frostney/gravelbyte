@@ -3,41 +3,46 @@
 #include <algorithm>
 #include <cmath>
 
-namespace rally {
+namespace Rally {
 // Shared by host course tests and the optional hardware benchmark firmware.
 // It only supplies public driving inputs; it cannot move the car or finish a run.
-inline Input driving_input(const Game &game) {
+inline DrivingInput CalculateDrivingInput(const Game &GameState) {
   // Plan braking from distance to each bend, instead of slowing to the
   // tightest corner speed for the entire next 72 metres.
-  float desired = game.spec().max_speed - 4.f;
-  for (int i = game.segment; i < std::min(NodeCount, game.segment + 16); ++i) {
-    float curve = std::abs(game.road[i].turn);
-    if (curve < .003f)
+  float Desired = GameState.GetCarSpecification().MaximumSpeed - 4.f;
+  for (int Index = GameState.Segment; Index < std::min(NodeCount, GameState.Segment + 16);
+       ++Index) {
+    float Curve = std::abs(GameState.Road[Index].Turn);
+    if (Curve < .003f)
       continue;
-    float corner_speed =
-        std::sqrt(6.5f * (game.spec().traction / 8.5f) * game.surface_grip(i) / curve);
-    float distance = std::max(0.f, (i - game.segment - game.route_t) * Step - 12.f);
-    desired = std::min(desired, std::sqrt(corner_speed * corner_speed + 2 * 6.f * distance));
+    float CornerSpeed = std::sqrt(6.5f * (GameState.GetCarSpecification().Traction / 8.5f) *
+                                  GameState.SurfaceGrip(Index) / Curve);
+    float Distance = std::max(
+        0.f, (Index - GameState.Segment - GameState.SegmentFraction) * TrackSegmentLength - 12.f);
+    Desired = std::min(Desired, std::sqrt(CornerSpeed * CornerSpeed + 2 * 6.f * Distance));
   }
-  float along = game.segment + game.route_t + (12 + game.speed * .35f) / Step;
-  int node = std::min(NodeCount - 2, int(along));
-  Vec target =
-      game.road[node].p + (game.road[node + 1].p - game.road[node].p) * clamp(along - node, 0, 1);
-  Vec delta = target - game.car;
-  float error = angle_delta(std::atan2(delta.x, delta.z), game.yaw);
-  Input input{};
-  input.throttle = game.speed < desired;
-  input.brake = game.speed > desired + 1;
-  input.left = error < -.025f;
-  input.right = error > .025f;
-  return input;
+  float Along = GameState.Segment + GameState.SegmentFraction +
+                (12 + GameState.Speed * .35f) / TrackSegmentLength;
+  int NodeIndex = std::min(NodeCount - 2, int(Along));
+  Vector3 Target = GameState.Road[NodeIndex].Position +
+                   (GameState.Road[NodeIndex + 1].Position - GameState.Road[NodeIndex].Position) *
+                       Clamp(Along - NodeIndex, 0, 1);
+  Vector3 Delta = Target - GameState.CarPosition;
+  float Error = AngleDelta(std::atan2(Delta.CoordinateX, Delta.CoordinateZ), GameState.Yaw);
+  DrivingInput PlayerInput{};
+  PlayerInput.Throttle = GameState.Speed < Desired;
+  PlayerInput.Brake = GameState.Speed > Desired + 1;
+  PlayerInput.Left = Error < -.025f;
+  PlayerInput.Right = Error > .025f;
+  return PlayerInput;
 }
-inline Input test_driver(const Game &game) {
-  if (game.mode == Mode::Title || game.mode == Mode::CarSelect || game.mode == Mode::TrackSelect) {
-    Input start{};
-    start.action = true;
-    return start;
+inline DrivingInput TestDriver(const Game &GameState) {
+  if (GameState.CurrentMode == GameMode::Title || GameState.CurrentMode == GameMode::CarSelect ||
+      GameState.CurrentMode == GameMode::TrackSelect) {
+    DrivingInput Start{};
+    Start.Action = true;
+    return Start;
   }
-  return driving_input(game);
+  return CalculateDrivingInput(GameState);
 }
-} // namespace rally
+} // namespace Rally

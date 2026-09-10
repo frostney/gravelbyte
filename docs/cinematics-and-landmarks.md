@@ -39,7 +39,7 @@ car profiles and target times remain data rather than unrelated global constants
 
 Save version 2 uses a spare bit in the existing selection word for mute, retaining
 the 200-byte layout. Version 1 saves load directly; the older course-v3 record
-continues to migrate to Torr/Bracken only. Unlocking is derived from the saved
+continues to migrate to Kestrel GT/Bracken only. Unlocking is derived from the saved
 best times, so an older qualifying record earns the same progression.
 
 ## Race-entry defect

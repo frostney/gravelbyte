@@ -4,111 +4,116 @@
 #include <cstdio>
 #include <cstring>
 #include <emscripten/emscripten.h>
-using namespace rally;
-static Game game;
-static Renderer renderer;
-static std::array<uint16_t, W * H> pixels;
-static SaveData transfer;
-static unsigned previous = 0;
-static char status_text[1024];
+using namespace Rally;
+static Game GameState;
+static Renderer SceneRenderer;
+static std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels;
+static SaveData Transfer;
+static unsigned Previous = 0;
+static char StatusText[1024];
 extern "C" {
-EMSCRIPTEN_KEEPALIVE const char *gb_build_id() { return GRAVELBYTE_BUILD_ID; }
-EMSCRIPTEN_KEEPALIVE const char *gb_status() {
-  switch (game.mode) {
-  case Mode::Title:
-    std::snprintf(status_text, sizeof(status_text),
+EMSCRIPTEN_KEEPALIVE const char *GravelbyteBuildIdentifier() { return GRAVELBYTE_BUILD_ID; }
+EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
+  switch (GameState.CurrentMode) {
+  case GameMode::Title:
+    std::snprintf(StatusText, sizeof(StatusText),
                   "Gravelbyte. Press Enter or confirm to choose a car.");
     break;
-  case Mode::CarSelect:
-    std::snprintf(status_text, sizeof(status_text),
+  case GameMode::CarSelect:
+    std::snprintf(StatusText, sizeof(StatusText),
                   "Choose car: %s, %s. Speed %d of 5, acceleration %d of 5, drift %d of 5. Higher "
                   "drift means more sliding. Left and right change car; confirm chooses track.",
-                  game.spec().name, game.spec().difficulty, game.spec().speed_stat,
-                  game.spec().accel_stat, game.spec().drift_stat);
+                  GameState.GetCarSpecification().Name, GameState.GetCarSpecification().Difficulty,
+                  GameState.GetCarSpecification().SpeedStatistic,
+                  GameState.GetCarSpecification().AccelerationStatistic,
+                  GameState.GetCarSpecification().DriftStatistic);
     break;
-  case Mode::TrackSelect:
-    if (game.unlocked(game.selected_track))
-      std::snprintf(status_text, sizeof(status_text),
+  case GameMode::TrackSelect:
+    if (GameState.Unlocked(GameState.SelectedTrack))
+      std::snprintf(StatusText, sizeof(StatusText),
                     "Choose track: %s. Unlocked. Target %.2f seconds. Personal best %.2f seconds. "
                     "Confirm to race; back to cars.",
-                    TrackNames[game.selected_track], game.default_splits().back(), game.best);
+                    TrackNames[GameState.SelectedTrack], GameState.GetDefaultSplits().back(),
+                    GameState.Best);
     else
-      std::snprintf(status_text, sizeof(status_text),
+      std::snprintf(StatusText, sizeof(StatusText),
                     "Choose track: %s. Locked. Beat %s to unlock. Left and right browse tracks; "
                     "back to cars.",
-                    TrackNames[game.selected_track], TrackNames[game.selected_track - 1]);
+                    TrackNames[GameState.SelectedTrack], TrackNames[GameState.SelectedTrack - 1]);
     break;
-  case Mode::Countdown:
-    std::snprintf(status_text, sizeof(status_text),
-                  "Get ready. Racing starts after the countdown.");
+  case GameMode::Countdown:
+    std::snprintf(StatusText, sizeof(StatusText), "Get ready. Racing starts after the countdown.");
     break;
-  case Mode::Racing:
-    std::snprintf(status_text, sizeof(status_text), "Racing. Checkpoint %d of 5. P pauses.",
-                  std::min(5, game.split_count + 1));
+  case GameMode::Racing:
+    std::snprintf(StatusText, sizeof(StatusText), "Racing. Checkpoint %d of 5. P pauses.",
+                  std::min(5, GameState.SplitCount + 1));
     break;
-  case Mode::Paused:
-    std::snprintf(status_text, sizeof(status_text),
+  case GameMode::Paused:
+    std::snprintf(StatusText, sizeof(StatusText),
                   "Paused. Resume, retry, or return to car selection.");
     break;
-  case Mode::Finished:
-    std::snprintf(status_text, sizeof(status_text),
+  case GameMode::Finished:
+    std::snprintf(StatusText, sizeof(StatusText),
                   "Stage complete. Time %.2f seconds; target %.2f seconds. %s. Confirm retries; "
                   "back chooses a track.",
-                  game.elapsed, game.default_splits().back(),
-                  game.elapsed < game.default_splits().back() ? "Target beaten"
-                                                              : "Target not beaten");
-    if (game.show_records) {
-      std::size_t used = std::strlen(status_text);
-      for (int i = 0; i < SectorCount && used < sizeof(status_text); ++i)
-        used += std::snprintf(status_text + used, sizeof(status_text) - used,
-                              " Checkpoint %d: %+.2f seconds against target.", i + 1,
-                              game.splits[i] - game.default_splits()[i]);
+                  GameState.Elapsed, GameState.GetDefaultSplits().back(),
+                  GameState.Elapsed < GameState.GetDefaultSplits().back() ? "Target beaten"
+                                                                          : "Target not beaten");
+    if (GameState.ShowRecords) {
+      std::size_t Used = std::strlen(StatusText);
+      for (int Index = 0; Index < SectorCount && Used < sizeof(StatusText); ++Index)
+        Used += std::snprintf(StatusText + Used, sizeof(StatusText) - Used,
+                              " Checkpoint %d: %+.2f seconds against target.", Index + 1,
+                              GameState.Splits[Index] - GameState.GetDefaultSplits()[Index]);
     }
     break;
   }
-  return status_text;
+  return StatusText;
 }
-EMSCRIPTEN_KEEPALIVE int gb_unlocked() { return game.unlocked(game.selected_track); }
+EMSCRIPTEN_KEEPALIVE int GravelbyteTrackUnlocked() {
+  return GameState.Unlocked(GameState.SelectedTrack);
+}
 
-EMSCRIPTEN_KEEPALIVE const uint16_t *gb_frame() {
-  renderer.render(game, pixels.data());
-  return pixels.data();
+EMSCRIPTEN_KEEPALIVE const uint16_t *GravelbyteFrame() {
+  SceneRenderer.Render(GameState, Pixels.data());
+  return Pixels.data();
 }
-EMSCRIPTEN_KEEPALIVE void gb_step(float dt, unsigned buttons, int controls) {
-  game.controls = static_cast<Controls>(std::clamp(controls, 1, 3));
-  const unsigned edges = buttons & ~previous;
-  previous = buttons;
-  Input in;
-  in.left = buttons & 1;
-  in.right = buttons & 2;
-  in.throttle = buttons & 4;
-  in.brake = buttons & 8;
-  in.handbrake = buttons & 16;
-  in.action = edges & 32;
-  in.pause = edges & 64;
-  in.back = edges & 128;
-  in.auxiliary = edges & (16 | 256);
-  game.tick(dt, in);
+EMSCRIPTEN_KEEPALIVE void GravelbyteUpdate(float DeltaTimeSeconds, unsigned Buttons,
+                                           int ControlScheme) {
+  GameState.ControlScheme = static_cast<Controls>(std::clamp(ControlScheme, 1, 3));
+  const unsigned Edges = Buttons & ~Previous;
+  Previous = Buttons;
+  DrivingInput PlayerInput;
+  PlayerInput.Left = Buttons & 1;
+  PlayerInput.Right = Buttons & 2;
+  PlayerInput.Throttle = Buttons & 4;
+  PlayerInput.Brake = Buttons & 8;
+  PlayerInput.Handbrake = Buttons & 16;
+  PlayerInput.Action = Edges & 32;
+  PlayerInput.Pause = Edges & 64;
+  PlayerInput.Back = Edges & 128;
+  PlayerInput.Auxiliary = Edges & (16 | 256);
+  GameState.Update(DeltaTimeSeconds, PlayerInput);
 }
-EMSCRIPTEN_KEEPALIVE void gb_blur() {
-  previous = 0;
-  if (game.mode == Mode::Racing || game.mode == Mode::Countdown) {
-    game.resume_mode = game.mode;
-    game.mode = Mode::Paused;
+EMSCRIPTEN_KEEPALIVE void GravelbyteSuspend() {
+  Previous = 0;
+  if (GameState.CurrentMode == GameMode::Racing || GameState.CurrentMode == GameMode::Countdown) {
+    GameState.ResumeMode = GameState.CurrentMode;
+    GameState.CurrentMode = GameMode::Paused;
   }
 }
-EMSCRIPTEN_KEEPALIVE int gb_car() { return game.selected_car; }
-EMSCRIPTEN_KEEPALIVE int gb_track() { return game.selected_track; }
-EMSCRIPTEN_KEEPALIVE int gb_mode() { return int(game.mode); }
-EMSCRIPTEN_KEEPALIVE float gb_speed() { return game.speed; }
-EMSCRIPTEN_KEEPALIVE int gb_muted() { return game.muted; }
-EMSCRIPTEN_KEEPALIVE void gb_toggle_audio() { game.toggle_audio(); }
-EMSCRIPTEN_KEEPALIVE int gb_dirty() { return game.save_requested; }
-EMSCRIPTEN_KEEPALIVE void gb_saved() { game.save_requested = false; }
-EMSCRIPTEN_KEEPALIVE int gb_save_size() { return sizeof(transfer); }
-EMSCRIPTEN_KEEPALIVE SaveData *gb_save() {
-  transfer = encode_save(game);
-  return &transfer;
+EMSCRIPTEN_KEEPALIVE int GravelbyteCar() { return GameState.SelectedCar; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteTrack() { return GameState.SelectedTrack; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteMode() { return int(GameState.CurrentMode); }
+EMSCRIPTEN_KEEPALIVE float GravelbyteSpeed() { return GameState.Speed; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteMuted() { return GameState.Muted; }
+EMSCRIPTEN_KEEPALIVE void GravelbyteToggleAudio() { GameState.ToggleAudio(); }
+EMSCRIPTEN_KEEPALIVE int GravelbyteSavePending() { return GameState.SaveRequested; }
+EMSCRIPTEN_KEEPALIVE void GravelbyteMarkSaved() { GameState.SaveRequested = false; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteSaveSize() { return sizeof(Transfer); }
+EMSCRIPTEN_KEEPALIVE SaveData *GravelbyteSave() {
+  Transfer = EncodeSave(GameState);
+  return &Transfer;
 }
-EMSCRIPTEN_KEEPALIVE int gb_load() { return load_save(game, transfer); }
+EMSCRIPTEN_KEEPALIVE int GravelbyteLoad() { return LoadSave(GameState, Transfer); }
 }

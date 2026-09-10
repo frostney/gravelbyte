@@ -1,23 +1,25 @@
-const $ = (id) => document.getElementById(id);
-const canvas = $('game'),
-  ctx = canvas.getContext('2d', { alpha: false }),
-  frame = ctx.createImageData(120, 120);
-const storageKey = 'gravelbyte.records.v1';
-let engine,
-  playing = false,
-  muted = false,
-  activeInput = matchMedia('(pointer:coarse)').matches ? 'touch' : 'keyboard';
-let keyboard = 0,
-  touchBits = 0,
-  pulses = 0,
-  lastTime = 0,
-  lastMode = -1,
-  lastPad = 0,
-  saveFailed = false;
-let audioContext, oscillator, gain;
-const menuCommands = [];
-let menuRelease = false;
-const keyBits = {
+const FindElement = (ElementIdentifier) => document.getElementById(ElementIdentifier);
+const Canvas = FindElement('game'),
+  RenderingContext = Canvas.getContext('2d', {
+    alpha: false,
+  }),
+  FramebufferImage = RenderingContext.createImageData(120, 120);
+const StorageKey = 'gravelbyte.records.v1';
+let GameEngine,
+  Playing = false,
+  Muted = false,
+  ActiveInput = matchMedia('(pointer:coarse)').matches ? 'touch' : 'keyboard';
+let Keyboard = 0,
+  TouchBits = 0,
+  Pulses = 0,
+  LastTime = 0,
+  LastMode = -1,
+  PreviousGamepadInputs = 0,
+  SaveFailed = false;
+let EngineAudioContext, Oscillator, Gain;
+const MenuCommands = [];
+let MenuRelease = false;
+const KeyBits = {
   ArrowLeft: 1,
   ArrowRight: 2,
   ArrowUp: 4,
@@ -29,13 +31,13 @@ const keyBits = {
   KeyP: 64,
   Escape: 128,
 };
-const pressedKeys = new Set(),
-  pointers = new Map();
-function useInput(input) {
-  activeInput = input;
-  $('input-label').textContent = input;
-  $('touch').hidden = input !== 'touch' || !playing;
-  const hints = {
+const PressedKeys = new Set(),
+  Pointers = new Map();
+function UseInput(Input) {
+  ActiveInput = Input;
+  FindElement('input-label').textContent = Input;
+  FindElement('touch').hidden = Input !== 'touch' || !Playing;
+  const Hints = {
     keyboard:
       '← → steer · ↑ / Z gas · ↓ / X brake · Space drift · Enter confirm · Esc back · P pause · M sound · Space records after finishing',
     gamepad:
@@ -43,9 +45,9 @@ function useInput(input) {
     touch:
       'Hold arrows to steer; Gas, Brake and Drift to drive. Go confirms; Back returns; Pause stops. Records shows splits after finishing.',
   };
-  $('controls').replaceChildren();
-  if (input === 'keyboard') {
-    const bindings = [
+  FindElement('controls').replaceChildren();
+  if (Input === 'keyboard') {
+    const Bindings = [
       [['←', '→'], 'steer / select'],
       [['↑', 'Z'], 'gas'],
       [['↓', 'X'], 'brake'],
@@ -56,15 +58,15 @@ function useInput(input) {
       [['M'], 'sound'],
       [['F'], 'fullscreen'],
     ];
-    for (const [keys, action] of bindings) {
-      const item = document.createElement('span');
-      item.className = 'binding';
-      const keyGroup = document.createElement('span');
-      keyGroup.className = 'key-group';
-      for (const key of keys) {
-        const kbd = document.createElement('kbd');
-        kbd.textContent = key;
-        kbd.setAttribute(
+    for (const [Keys, Action] of Bindings) {
+      const Item = document.createElement('span');
+      Item.className = 'binding';
+      const KeyGroup = document.createElement('span');
+      KeyGroup.className = 'key-group';
+      for (const Key of Keys) {
+        const KeyElement = document.createElement('kbd');
+        KeyElement.textContent = Key;
+        KeyElement.setAttribute(
           'aria-label',
           {
             '←': 'Left arrow',
@@ -73,313 +75,339 @@ function useInput(input) {
             '↓': 'Down arrow',
             '␣': 'Space',
             '↵': 'Enter',
-          }[key] ?? key,
+          }[Key] ?? Key,
         );
-        keyGroup.append(kbd);
+        KeyGroup.append(KeyElement);
       }
-      item.append(keyGroup, document.createTextNode(action));
-      $('controls').append(item);
+      Item.append(KeyGroup, document.createTextNode(Action));
+      FindElement('controls').append(Item);
     }
-  } else $('controls').textContent = hints[input];
+  } else FindElement('controls').textContent = Hints[Input];
 }
-function startAudio() {
+function StartAudio() {
   try {
-    if (!audioContext) {
-      audioContext = new AudioContext();
-      oscillator = audioContext.createOscillator();
-      gain = audioContext.createGain();
-      oscillator.type = 'sawtooth';
-      gain.gain.value = 0;
-      oscillator.connect(gain).connect(audioContext.destination);
-      oscillator.start();
+    if (!EngineAudioContext) {
+      EngineAudioContext = new window.AudioContext();
+      Oscillator = EngineAudioContext.createOscillator();
+      Gain = EngineAudioContext.createGain();
+      Oscillator.type = 'sawtooth';
+      Gain.gain.value = 0;
+      Oscillator.connect(Gain).connect(EngineAudioContext.destination);
+      Oscillator.start();
     }
-    audioContext.resume().catch(() => {});
+    EngineAudioContext.resume().catch(() => {});
   } catch {
     /* Silent play remains available. */
   }
 }
-function resetInputs() {
-  keyboard = touchBits = pulses = lastPad = 0;
-  pressedKeys.clear();
-  menuCommands.length = 0;
-  menuRelease = false;
-  pointers.clear();
-  document.querySelectorAll('#touch .pressed').forEach((b) => b.classList.remove('pressed'));
+function ResetInputs() {
+  Keyboard = TouchBits = Pulses = PreviousGamepadInputs = 0;
+  PressedKeys.clear();
+  MenuCommands.length = 0;
+  MenuRelease = false;
+  Pointers.clear();
+  document
+    .querySelectorAll('#touch .pressed')
+    .forEach((Button) => Button.classList.remove('pressed'));
 }
-function suspend() {
-  resetInputs();
-  lastTime = 0;
-  if (engine) engine._gb_blur();
-  if (gain) gain.gain.value = 0;
+function Suspend() {
+  ResetInputs();
+  LastTime = 0;
+  if (GameEngine) GameEngine._GravelbyteSuspend();
+  if (Gain) Gain.gain.value = 0;
 }
-window.addEventListener('blur', suspend);
+window.addEventListener('blur', Suspend);
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) suspend();
+  if (document.hidden) Suspend();
 });
-canvas.addEventListener('blur', suspend);
-canvas.addEventListener('pointerdown', (e) => {
-  useInput(e.pointerType === 'touch' ? 'touch' : 'keyboard');
-  canvas.focus();
-  startAudio();
+Canvas.addEventListener('blur', Suspend);
+Canvas.addEventListener('pointerdown', (Event) => {
+  UseInput(Event.pointerType === 'touch' ? 'touch' : 'keyboard');
+  Canvas.focus();
+  StartAudio();
 });
-canvas.addEventListener('keydown', (e) => {
-  if (!(e.code in keyBits) && !['KeyM', 'KeyF'].includes(e.code)) return;
-  e.preventDefault();
-  useInput('keyboard');
-  startAudio();
-  if (e.code === 'KeyF') {
-    if (!e.repeat) fullscreen();
+Canvas.addEventListener('keydown', (Event) => {
+  if (!(Event.code in KeyBits) && !['KeyM', 'KeyF'].includes(Event.code)) return;
+  Event.preventDefault();
+  UseInput('keyboard');
+  StartAudio();
+  if (Event.code === 'KeyF') {
+    if (!Event.repeat) Fullscreen();
     return;
   }
-  if (e.code === 'KeyM') {
-    if (!e.repeat) $('mute').click();
+  if (Event.code === 'KeyM') {
+    if (!Event.repeat) FindElement('mute').click();
     return;
   }
-  if (!e.repeat) pulses |= keyBits[e.code];
-  pressedKeys.add(e.code);
-  keyboard = [...pressedKeys].reduce((b, k) => b | keyBits[k], 0);
+  if (!Event.repeat) Pulses |= KeyBits[Event.code];
+  PressedKeys.add(Event.code);
+  Keyboard = [...PressedKeys].reduce((InputValue, KeyCode) => InputValue | KeyBits[KeyCode], 0);
 });
-window.addEventListener('keyup', (e) => {
-  pressedKeys.delete(e.code);
-  keyboard = [...pressedKeys].reduce((b, k) => b | keyBits[k], 0);
+window.addEventListener('keyup', (Event) => {
+  PressedKeys.delete(Event.code);
+  Keyboard = [...PressedKeys].reduce((InputValue, KeyCode) => InputValue | KeyBits[KeyCode], 0);
 });
-for (const button of document.querySelectorAll('[data-bit]')) {
-  button.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    useInput('touch');
-    canvas.focus();
-    startAudio();
-    button.setPointerCapture(e.pointerId);
-    pulses |= Number(button.dataset.bit);
-    pointers.set(e.pointerId, Number(button.dataset.bit));
-    button.classList.add('pressed');
-    touchBits = [...pointers.values()].reduce((a, b) => a | b, 0);
+for (const Button of document.querySelectorAll('[data-bit]')) {
+  Button.addEventListener('pointerdown', (Event) => {
+    Event.preventDefault();
+    UseInput('touch');
+    Canvas.focus();
+    StartAudio();
+    Button.setPointerCapture(Event.pointerId);
+    Pulses |= Number(Button.dataset.bit);
+    Pointers.set(Event.pointerId, Number(Button.dataset.bit));
+    Button.classList.add('pressed');
+    TouchBits = [...Pointers.values()].reduce(
+      (AccumulatedInputs, InputValue) => AccumulatedInputs | InputValue,
+      0,
+    );
   });
-  const release = (e) => {
-    pointers.delete(e.pointerId);
-    touchBits = [...pointers.values()].reduce((a, b) => a | b, 0);
-    button.classList.remove('pressed');
+  const Release = (Event) => {
+    Pointers.delete(Event.pointerId);
+    TouchBits = [...Pointers.values()].reduce(
+      (AccumulatedInputs, InputValue) => AccumulatedInputs | InputValue,
+      0,
+    );
+    Button.classList.remove('pressed');
   };
-  button.addEventListener('pointerup', release);
-  button.addEventListener('pointercancel', release);
-  button.addEventListener('lostpointercapture', release);
+  Button.addEventListener('pointerup', Release);
+  Button.addEventListener('pointercancel', Release);
+  Button.addEventListener('lostpointercapture', Release);
 }
-$('play').addEventListener('click', (e) => {
-  useInput(e.pointerType === 'touch' ? 'touch' : activeInput);
-  playing = true;
-  canvas.focus();
-  startAudio();
-  $('start-overlay').hidden = true;
-  useInput(activeInput);
-  lastTime = 0;
+FindElement('play').addEventListener('click', (Event) => {
+  UseInput(Event.pointerType === 'touch' ? 'touch' : ActiveInput);
+  Playing = true;
+  Canvas.focus();
+  StartAudio();
+  FindElement('start-overlay').hidden = true;
+  UseInput(ActiveInput);
+  LastTime = 0;
 });
-$('mute').addEventListener('pointerdown', (e) => {
-  if (playing) e.preventDefault();
+FindElement('mute').addEventListener('pointerdown', (Event) => {
+  if (Playing) Event.preventDefault();
 });
-function updateMute() {
-  $('mute').setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
-  $('mute').setAttribute('title', muted ? 'Unmute' : 'Mute');
-  $('mute').setAttribute('aria-pressed', String(muted));
+function UpdateMute() {
+  FindElement('mute').setAttribute('aria-label', Muted ? 'Unmute' : 'Mute');
+  FindElement('mute').setAttribute('title', Muted ? 'Unmute' : 'Mute');
+  FindElement('mute').setAttribute('aria-pressed', String(Muted));
 }
-$('mute').addEventListener('click', () => {
-  if (!engine) return;
-  engine._gb_toggle_audio();
-  muted = !!engine._gb_muted();
-  save();
-  updateMute();
-  if (playing) {
-    canvas.focus();
-    startAudio();
+FindElement('mute').addEventListener('click', () => {
+  if (!GameEngine) return;
+  GameEngine._GravelbyteToggleAudio();
+  Muted = !!GameEngine._GravelbyteMuted();
+  Save();
+  UpdateMute();
+  if (Playing) {
+    Canvas.focus();
+    StartAudio();
   }
 });
-async function fullscreen() {
+async function Fullscreen() {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await $('stage').requestFullscreen();
-    if (playing) canvas.focus();
+    else await FindElement('stage').requestFullscreen();
+    if (Playing) Canvas.focus();
   } catch {
-    $('save-status').textContent =
+    FindElement('save-status').textContent =
       'Fullscreen is unavailable in this browser. You can still play here.';
   }
 }
-function gamepad() {
-  let bits = 0;
-  for (const pad of navigator.getGamepads?.() ?? []) {
-    if (!pad || pad.mapping !== 'standard') continue;
-    const held = (i) => !!pad.buttons[i]?.pressed;
-    if (held(14) || pad.axes[0] < -0.25) bits |= 1;
-    if (held(15) || pad.axes[0] > 0.25) bits |= 2;
-    if (held(0) || held(7)) bits |= 4;
-    if (held(1) || held(6)) bits |= 8;
-    if (held(2)) bits |= 16;
-    if (held(0)) bits |= 32;
-    if (held(9)) bits |= 64;
-    if (held(1)) bits |= 128;
+function Gamepad() {
+  let InputBits = 0;
+  for (const GamepadState of navigator.getGamepads?.() ?? []) {
+    if (!GamepadState || GamepadState.mapping !== 'standard') continue;
+    const Held = (Index) => !!GamepadState.buttons[Index]?.pressed;
+    if (Held(14) || GamepadState.axes[0] < -0.25) InputBits |= 1;
+    if (Held(15) || GamepadState.axes[0] > 0.25) InputBits |= 2;
+    if (Held(0) || Held(7)) InputBits |= 4;
+    if (Held(1) || Held(6)) InputBits |= 8;
+    if (Held(2)) InputBits |= 16;
+    if (Held(0)) InputBits |= 32;
+    if (Held(9)) InputBits |= 64;
+    if (Held(1)) InputBits |= 128;
   }
-  if (bits && bits !== lastPad) {
-    useInput('gamepad');
+  if (InputBits && InputBits !== PreviousGamepadInputs) {
+    UseInput('gamepad');
   }
-  lastPad = bits;
-  return document.activeElement === canvas ? bits : 0;
+  PreviousGamepadInputs = InputBits;
+  return document.activeElement === Canvas ? InputBits : 0;
 }
-function render() {
-  const ptr = engine._gb_frame() >>> 1;
-  const raw = engine.HEAPU16;
-  for (let i = 0; i < 14400; i++) {
-    let c = raw[ptr + i];
-    frame.data[i * 4] = (c >>> 12) * 17;
-    frame.data[i * 4 + 1] = ((c >>> 8) & 15) * 17;
-    frame.data[i * 4 + 2] = ((c >>> 4) & 15) * 17;
-    frame.data[i * 4 + 3] = 255;
+function Render() {
+  const BufferOffset = GameEngine._GravelbyteFrame() >>> 1;
+  const PixelMemory = GameEngine.HEAPU16;
+  for (let Index = 0; Index < 14400; Index++) {
+    let PackedColor = PixelMemory[BufferOffset + Index];
+    FramebufferImage.data[Index * 4] = (PackedColor >>> 12) * 17;
+    FramebufferImage.data[Index * 4 + 1] = ((PackedColor >>> 8) & 15) * 17;
+    FramebufferImage.data[Index * 4 + 2] = ((PackedColor >>> 4) & 15) * 17;
+    FramebufferImage.data[Index * 4 + 3] = 255;
   }
-  ctx.putImageData(frame, 0, 0);
+  RenderingContext.putImageData(FramebufferImage, 0, 0);
 }
-function save() {
-  if (!engine._gb_dirty()) return;
+function Save() {
+  if (!GameEngine._GravelbyteSavePending()) return;
   try {
-    const ptr = engine._gb_save(),
-      size = engine._gb_save_size();
+    const BufferOffset = GameEngine._GravelbyteSave(),
+      Size = GameEngine._GravelbyteSaveSize();
     localStorage.setItem(
-      storageKey,
-      JSON.stringify(Array.from(engine.HEAPU8.subarray(ptr, ptr + size))),
+      StorageKey,
+      JSON.stringify(Array.from(GameEngine.HEAPU8.subarray(BufferOffset, BufferOffset + Size))),
     );
-    engine._gb_saved();
-    if (saveFailed) $('save-status').textContent = '';
-    saveFailed = false;
+    GameEngine._GravelbyteMarkSaved();
+    if (SaveFailed) FindElement('save-status').textContent = '';
+    SaveFailed = false;
   } catch {
-    engine._gb_saved();
-    saveFailed = true;
-    $('save-status').textContent = 'Storage is unavailable. Records last for this session only.';
+    GameEngine._GravelbyteMarkSaved();
+    SaveFailed = true;
+    FindElement('save-status').textContent =
+      'Storage is unavailable. Records last for this session only.';
   }
 }
-function tick(time) {
-  if (playing && !document.hidden) {
-    const delta = lastTime ? (time - lastTime) / 1000 : 0;
-    lastTime = time;
-    if (delta > 0.25) {
-      suspend();
+function Tick(TimestampMilliseconds) {
+  if (Playing && !document.hidden) {
+    const DeltaTimeSeconds = LastTime ? (TimestampMilliseconds - LastTime) / 1000 : 0;
+    LastTime = TimestampMilliseconds;
+    if (DeltaTimeSeconds > 0.25) {
+      Suspend();
     } else {
-      const pad = gamepad();
-      let menuCommand = 0;
-      if (menuRelease) menuRelease = false;
-      else if (menuCommands.length) {
-        menuCommand = menuCommands.shift();
-        menuRelease = true;
+      const GamepadState = Gamepad();
+      let MenuCommand = 0;
+      if (MenuRelease) MenuRelease = false;
+      else if (MenuCommands.length) {
+        MenuCommand = MenuCommands.shift();
+        MenuRelease = true;
       }
-      engine._gb_step(
-        Math.max(0.0001, delta),
-        keyboard | touchBits | pulses | pad | menuCommand,
-        { keyboard: 1, gamepad: 2, touch: 3 }[activeInput],
+      GameEngine._GravelbyteUpdate(
+        Math.max(0.0001, DeltaTimeSeconds),
+        Keyboard | TouchBits | Pulses | GamepadState | MenuCommand,
+        {
+          keyboard: 1,
+          gamepad: 2,
+          touch: 3,
+        }[ActiveInput],
       );
-      pulses = 0;
+      Pulses = 0;
     }
-    const mode = engine._gb_mode();
-    muted = !!engine._gb_muted();
-    updateMute();
-    canvas.dataset.mode = String(mode);
-    canvas.dataset.car = String(engine._gb_car());
-    canvas.dataset.track = String(engine._gb_track());
-    if (mode !== lastMode) {
-      lastMode = mode;
-      const race = mode === 3 || mode === 4;
-      document.querySelectorAll('.race-control').forEach((b) => (b.hidden = !race));
-      const pauseTouch = document.querySelector('.touch-pause');
-      pauseTouch.hidden = !race && mode !== 5;
-      pauseTouch.textContent = mode === 5 ? 'Resume' : 'Pause';
-      document.querySelectorAll('.menu-control').forEach((b) => (b.hidden = race));
-      $('records').hidden = mode !== 6;
-      const menuHadFocus = $('accessible-menu').contains(document.activeElement);
-      updateAccessibleMenu(mode);
-      if (mode === 3 && menuHadFocus) canvas.focus();
-      else if (menuHadFocus && document.activeElement === document.body) $('menu-confirm').focus();
+    const Mode = GameEngine._GravelbyteMode();
+    Muted = !!GameEngine._GravelbyteMuted();
+    UpdateMute();
+    Canvas.dataset.mode = String(Mode);
+    Canvas.dataset.car = String(GameEngine._GravelbyteCar());
+    Canvas.dataset.track = String(GameEngine._GravelbyteTrack());
+    if (Mode !== LastMode) {
+      LastMode = Mode;
+      const Race = Mode === 3 || Mode === 4;
+      document
+        .querySelectorAll('.race-control')
+        .forEach((InputValue) => (InputValue.hidden = !Race));
+      const PauseTouch = document.querySelector('.touch-pause');
+      PauseTouch.hidden = !Race && Mode !== 5;
+      PauseTouch.textContent = Mode === 5 ? 'Resume' : 'Pause';
+      document
+        .querySelectorAll('.menu-control')
+        .forEach((InputValue) => (InputValue.hidden = Race));
+      FindElement('records').hidden = Mode !== 6;
+      const MenuHadFocus = FindElement('accessible-menu').contains(document.activeElement);
+      UpdateAccessibleMenu(Mode);
+      if (Mode === 3 && MenuHadFocus) Canvas.focus();
+      else if (MenuHadFocus && document.activeElement === document.body)
+        FindElement('menu-confirm').focus();
     }
-    const status = engine.UTF8ToString(engine._gb_status());
-    if ($('game-status').textContent !== status) $('game-status').textContent = status;
-    if (mode === 2) $('menu-confirm').setAttribute('aria-disabled', String(!engine._gb_unlocked()));
-    if (gain) {
-      gain.gain.setTargetAtTime(
-        !muted && (mode === 0 || mode === 4 || mode === 6) ? 0.035 : 0,
-        audioContext.currentTime,
+    const Status = GameEngine.UTF8ToString(GameEngine._GravelbyteStatus());
+    if (FindElement('game-status').textContent !== Status)
+      FindElement('game-status').textContent = Status;
+    if (Mode === 2)
+      FindElement('menu-confirm').setAttribute(
+        'aria-disabled',
+        String(!GameEngine._GravelbyteTrackUnlocked()),
+      );
+    if (Gain) {
+      Gain.gain.setTargetAtTime(
+        !Muted && (Mode === 0 || Mode === 4 || Mode === 6) ? 0.035 : 0,
+        EngineAudioContext.currentTime,
         0.03,
       );
-      oscillator.frequency.setTargetAtTime(
-        65 + engine._gb_speed() * 8,
-        audioContext.currentTime,
+      Oscillator.frequency.setTargetAtTime(
+        65 + GameEngine._GravelbyteSpeed() * 8,
+        EngineAudioContext.currentTime,
         0.03,
       );
     }
-    save();
-    render();
+    Save();
+    Render();
   }
-  requestAnimationFrame(tick);
+  requestAnimationFrame(Tick);
 }
-function menuInput(bit) {
-  if (engine && playing) menuCommands.push(bit);
+function MenuInput(Bit) {
+  if (GameEngine && Playing) MenuCommands.push(Bit);
 }
-for (const [id, bit] of [
+for (const [ElementIdentifier, Bit] of [
   ['menu-previous', 1],
   ['menu-next', 2],
   ['menu-confirm', 32],
   ['menu-back', 128],
 ])
-  $(id).addEventListener('click', () => menuInput(bit));
-function updateAccessibleMenu(mode) {
-  $('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(mode);
-  const select = mode === 1 || mode === 2;
-  for (const id of ['menu-previous', 'menu-next']) $(id).hidden = !select;
-  $('menu-previous').textContent = mode === 1 ? 'Previous car' : 'Previous track';
-  $('menu-next').textContent = mode === 1 ? 'Next car' : 'Next track';
-  $('menu-confirm').textContent =
-    mode === 0 ? 'Choose car' : mode === 1 ? 'Choose track' : mode === 2 ? 'Start race' : 'Retry';
-  $('menu-confirm').setAttribute('aria-disabled', 'false');
-  $('menu-back').hidden = mode === 0;
-  $('menu-back').textContent =
-    mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : 'Choose car';
-  $('menu-aux').hidden = mode !== 6 && mode !== 5;
-  $('menu-aux').textContent = mode === 5 ? 'Resume' : 'Toggle checkpoint records';
+  FindElement(ElementIdentifier).addEventListener('click', () => MenuInput(Bit));
+function UpdateAccessibleMenu(Mode) {
+  FindElement('accessible-menu').hidden = ![0, 1, 2, 5, 6].includes(Mode);
+  const Select = Mode === 1 || Mode === 2;
+  for (const ElementIdentifier of ['menu-previous', 'menu-next'])
+    FindElement(ElementIdentifier).hidden = !Select;
+  FindElement('menu-previous').textContent = Mode === 1 ? 'Previous car' : 'Previous track';
+  FindElement('menu-next').textContent = Mode === 1 ? 'Next car' : 'Next track';
+  FindElement('menu-confirm').textContent =
+    Mode === 0 ? 'Choose car' : Mode === 1 ? 'Choose track' : Mode === 2 ? 'Start race' : 'Retry';
+  FindElement('menu-confirm').setAttribute('aria-disabled', 'false');
+  FindElement('menu-back').hidden = Mode === 0;
+  FindElement('menu-back').textContent =
+    Mode === 1 ? 'Back to title' : Mode === 6 ? 'Choose track' : 'Choose car';
+  FindElement('menu-aux').hidden = Mode !== 6 && Mode !== 5;
+  FindElement('menu-aux').textContent = Mode === 5 ? 'Resume' : 'Toggle checkpoint records';
 }
-$('menu-aux').addEventListener('click', () => menuInput(lastMode === 5 ? 64 : 256));
-useInput(activeInput);
+FindElement('menu-aux').addEventListener('click', () => MenuInput(LastMode === 5 ? 64 : 256));
+UseInput(ActiveInput);
 try {
-  const { default: createGravelbyte } = await import('./gravelbyte.js');
-  engine = await createGravelbyte();
-  const expected = document.querySelector('meta[name="gravelbyte-build"]').content;
+  const { default: CreateGravelbyte } = await import('./gravelbyte.js');
+  GameEngine = await CreateGravelbyte();
+  const Expected = document.querySelector('meta[name="gravelbyte-build"]').content;
   if (
-    typeof engine._gb_build_id !== 'function' ||
-    engine.UTF8ToString(engine._gb_build_id()) !== expected
+    typeof GameEngine._GravelbyteBuildIdentifier !== 'function' ||
+    GameEngine.UTF8ToString(GameEngine._GravelbyteBuildIdentifier()) !== Expected
   ) {
-    const error = new Error('Game build mismatch');
-    error.code = 'BUILD_MISMATCH';
-    throw error;
+    const BuildError = new Error('Game build mismatch');
+    BuildError.code = 'BUILD_MISMATCH';
+    throw BuildError;
   }
   try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      const bytes = JSON.parse(saved);
+    const Saved = localStorage.getItem(StorageKey);
+    if (Saved) {
+      const Bytes = JSON.parse(Saved);
       if (
-        !Array.isArray(bytes) ||
-        bytes.length !== engine._gb_save_size() ||
-        !bytes.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
+        !Array.isArray(Bytes) ||
+        Bytes.length !== GameEngine._GravelbyteSaveSize() ||
+        !Bytes.every(
+          (ByteValue) => Number.isInteger(ByteValue) && ByteValue >= 0 && ByteValue <= 255,
+        )
       )
         throw Error('Invalid record');
-      engine.HEAPU8.set(bytes, engine._gb_save());
-      if (!engine._gb_load()) throw Error('Invalid record');
+      GameEngine.HEAPU8.set(Bytes, GameEngine._GravelbyteSave());
+      if (!GameEngine._GravelbyteLoad()) throw Error('Invalid record');
     }
   } catch {
-    $('save-status').textContent =
+    FindElement('save-status').textContent =
       'Previous records could not be restored. A fresh session is ready.';
   }
-  render();
-  $('play').disabled = false;
-  $('play').textContent = 'Play Gravelbyte';
-  $('load-status').textContent = 'Ready to play.';
-  muted = !!engine._gb_muted();
-  updateMute();
-  requestAnimationFrame(tick);
-} catch (error) {
-  $('load-status').textContent =
-    error.code === 'BUILD_MISMATCH'
+  Render();
+  FindElement('play').disabled = false;
+  FindElement('play').textContent = 'Play Gravelbyte';
+  FindElement('load-status').textContent = 'Ready to play.';
+  Muted = !!GameEngine._GravelbyteMuted();
+  UpdateMute();
+  requestAnimationFrame(Tick);
+} catch (Error) {
+  FindElement('load-status').textContent =
+    Error.code === 'BUILD_MISMATCH'
       ? 'The game files are from different builds. Reload the page for a matching release.'
       : 'The game could not load. Please reload the page or download the PicoSystem version.';
-  console.error(error);
+  console.error(Error);
 }

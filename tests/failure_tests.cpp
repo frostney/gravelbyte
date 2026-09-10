@@ -7,166 +7,175 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-using namespace rally;
-static void check(bool ok, const char *what) {
-  if (!ok) {
-    std::fprintf(stderr, "FAIL: %s\n", what);
+using namespace Rally;
+static void Check(bool Passed, const char *Description) {
+  if (!Passed) {
+    std::fprintf(stderr, "FAIL: %s\n", Description);
     std::exit(1);
   }
 }
-alignas(4) static std::array<std::array<uint8_t, 4096>, 2> flash;
-static int erase_bytes = 4096, program_bytes = 256, written_slot = -1;
-static const SaveSlot &slot(int index) {
-  return *reinterpret_cast<const SaveSlot *>(flash[index].data());
+alignas(4) static std::array<std::array<uint8_t, 4096>, 2> Flash;
+static int EraseBytes = 4096, ProgramBytes = 256, WrittenSlot = -1;
+static const SaveSlot &Slot(int Index) {
+  return *reinterpret_cast<const SaveSlot *>(Flash[Index].data());
 }
-static void fake_flash_write(int target, const SaveSlot &value) {
-  written_slot = target;
-  std::fill_n(flash[target].begin(), erase_bytes, 0xff);
-  if (erase_bytes < 4096)
+static void FakeFlashWrite(int Target, const SaveSlot &Value) {
+  WrittenSlot = Target;
+  std::fill_n(Flash[Target].begin(), EraseBytes, 0xff);
+  if (EraseBytes < 4096)
     return;
-  std::array<uint8_t, 256> page;
-  page.fill(0xff);
-  std::memcpy(page.data(), &value, sizeof(value));
-  for (int i = 0; i < program_bytes; ++i)
-    flash[target][i] &= page[i];
+  std::array<uint8_t, 256> Page;
+  Page.fill(0xff);
+  std::memcpy(Page.data(), &Value, sizeof(Value));
+  for (int Index = 0; Index < ProgramBytes; ++Index)
+    Flash[Target][Index] &= Page[Index];
 }
 int main() {
-  Game g;
-  const auto old = make_slot(encode_save(g), 42);
-  g.muted = true;
-  const auto fresh = make_slot(encode_save(g), 43);
-  for (std::size_t count = 0; count <= sizeof(SaveSlot); ++count) {
-    SaveSlot cut;
-    std::memset(&cut, 0xff, sizeof(cut));
-    std::memcpy(&cut, &fresh, count);
-    int chosen = newest_slot(old, cut);
-    check(chosen == 0 || (chosen == 1 && std::memcmp(&cut, &fresh, sizeof(cut)) == 0),
+  Game GameState;
+  const auto Old = MakeSlot(EncodeSave(GameState), 42);
+  GameState.Muted = true;
+  const auto Fresh = MakeSlot(EncodeSave(GameState), 43);
+  for (std::size_t Count = 0; Count <= sizeof(SaveSlot); ++Count) {
+    SaveSlot Cut;
+    std::memset(&Cut, 0xff, sizeof(Cut));
+    std::memcpy(&Cut, &Fresh, Count);
+    int Chosen = NewestSlot(Old, Cut);
+    Check(Chosen == 0 || (Chosen == 1 && std::memcmp(&Cut, &Fresh, sizeof(Cut)) == 0),
           "every interrupted page program retains old or complete new save");
-    check(load_save(g, chosen == 0 ? old.data : cut.data), "chosen interrupted save loads");
+    Check(LoadSave(GameState, Chosen == 0 ? Old.Data : Cut.Data), "chosen interrupted save loads");
   }
-  for (std::size_t count = 0; count <= 4096; ++count) {
-    std::array<uint8_t, 4096> sector;
-    std::memcpy(sector.data(), &old, sizeof(old));
-    std::fill(sector.begin(), sector.begin() + count, 0xff);
-    SaveSlot erased;
-    std::memcpy(&erased, sector.data(), sizeof(erased));
-    check(newest_slot(erased, fresh) == 1,
+  for (std::size_t Count = 0; Count <= 4096; ++Count) {
+    std::array<uint8_t, 4096> Sector;
+    std::memcpy(Sector.data(), &Old, sizeof(Old));
+    std::fill(Sector.begin(), Sector.begin() + Count, 0xff);
+    SaveSlot Erased;
+    std::memcpy(&Erased, Sector.data(), sizeof(Erased));
+    Check(NewestSlot(Erased, Fresh) == 1,
           "partial erase of inactive sector preserves current save");
   }
-  for (std::size_t i = 0; i < sizeof(fresh); ++i) {
-    auto corrupt = fresh;
-    reinterpret_cast<uint8_t *>(&corrupt)[i] ^= 1;
-    check(newest_slot(old, corrupt) == 0, "corrupt newest page falls back to intact record");
+  for (std::size_t Index = 0; Index < sizeof(Fresh); ++Index) {
+    auto Corrupt = Fresh;
+    reinterpret_cast<uint8_t *>(&Corrupt)[Index] ^= 1;
+    Check(NewestSlot(Old, Corrupt) == 0, "corrupt newest page falls back to intact record");
   }
-  check(newest_slot(make_slot(old.data, 0xffffffffu), make_slot(fresh.data, 0)) == 1,
+  Check(NewestSlot(MakeSlot(Old.Data, 0xffffffffu), MakeSlot(Fresh.Data, 0)) == 1,
         "journal sequence wraps");
-  SaveSlot empty;
-  std::memset(&empty, 0xff, sizeof(empty));
-  check(newest_slot(empty, empty) == -1, "blank flash has no journal");
+  SaveSlot Empty;
+  std::memset(&Empty, 0xff, sizeof(Empty));
+  Check(NewestSlot(Empty, Empty) == -1, "blank flash has no journal");
   // Exercise the exact writer-selection/readback algorithm used on hardware.
-  for (int current : {0, 1})
-    for (int cut = 0; cut <= 4096 + 256; ++cut) {
-      for (auto &sector : flash)
-        sector.fill(0xff);
-      std::memcpy(flash[current].data(), &old, sizeof(old));
-      erase_bytes = std::min(cut, 4096);
-      program_bytes = std::max(0, cut - 4096);
-      const auto result = store_save(fresh.data, slot(0), slot(1), fake_flash_write);
-      check(written_slot != current, "writer never erases the selected save sector");
-      const int selected = newest_slot(slot(0), slot(1));
-      check(selected >= 0, "power interruption always leaves a loadable save");
-      check(load_save(g, slot(selected).data), "power-cut result restores game state");
-      check(result != SaveResult::Saved || g.muted, "success requires new setting readback");
+  for (int Current : {0, 1})
+    for (int Cut = 0; Cut <= 4096 + 256; ++Cut) {
+      for (auto &Sector : Flash)
+        Sector.fill(0xff);
+      std::memcpy(Flash[Current].data(), &Old, sizeof(Old));
+      EraseBytes = std::min(Cut, 4096);
+      ProgramBytes = std::max(0, Cut - 4096);
+      const auto Result = StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite);
+      Check(WrittenSlot != Current, "writer never erases the selected save sector");
+      const int Selected = NewestSlot(Slot(0), Slot(1));
+      Check(Selected >= 0, "power interruption always leaves a loadable save");
+      Check(LoadSave(GameState, Slot(Selected).Data), "power-cut result restores game state");
+      Check(Result != SaveResult::Saved || GameState.Muted,
+            "success requires new setting readback");
     }
-  for (int cut = 0; cut <= 4096 + 256; ++cut) {
-    for (auto &sector : flash)
-      sector.fill(0xff);
-    std::memcpy(flash[1].data(), &old.data, sizeof(old.data));
-    const auto legacy = flash[1];
-    erase_bytes = std::min(cut, 4096);
-    program_bytes = std::max(0, cut - 4096);
-    store_save(fresh.data, slot(0), slot(1), fake_flash_write);
-    check(written_slot == 0 && flash[1] == legacy,
+  for (int Cut = 0; Cut <= 4096 + 256; ++Cut) {
+    for (auto &Sector : Flash)
+      Sector.fill(0xff);
+    std::memcpy(Flash[1].data(), &Old.Data, sizeof(Old.Data));
+    const auto Legacy = Flash[1];
+    EraseBytes = std::min(Cut, 4096);
+    ProgramBytes = std::max(0, Cut - 4096);
+    StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite);
+    Check(WrittenSlot == 0 && Flash[1] == Legacy,
           "first migration preserves legacy sector across power loss");
   }
-  erase_bytes = 4096;
-  program_bytes = 256;
-  store_save(fresh.data, slot(0), slot(1), fake_flash_write);
-  written_slot = -1;
-  check(store_save(fresh.data, slot(0), slot(1), fake_flash_write) == SaveResult::Unchanged &&
-            written_slot == -1,
+  EraseBytes = 4096;
+  ProgramBytes = 256;
+  StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite);
+  WrittenSlot = -1;
+  Check(StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite) == SaveResult::Unchanged &&
+            WrittenSlot == -1,
         "unchanged saves do not erase flash");
-  GeometryTelemetry telemetry;
-  telemetry.observe(7);
-  telemetry.observe(0);
-  telemetry.observe(2);
-  telemetry.observe(0);
-  check(telemetry.frames == 4 && telemetry.dropped == 9 && telemetry.overflow_frames == 2,
+  GeometryTelemetry Telemetry;
+  Telemetry.Observe(7);
+  Telemetry.Observe(0);
+  Telemetry.Observe(2);
+  Telemetry.Observe(0);
+  Check(Telemetry.Frames == 4 && Telemetry.Dropped == 9 && Telemetry.OverflowFrames == 2,
         "overflow on earlier frames remains in final telemetry");
 
-  Renderer renderer;
-  std::array<uint16_t, W * H> pixels{};
+  Renderer SceneRenderer;
+  std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels{};
   // A non-planar right bank exposes a reversed diagonal: interpolating the
   // other diagonal yields 4m at this centroid instead of the drawn 2m.
-  g.segment = 150;
-  for (int row = 0; row < NodeCount; ++row)
-    for (int strip = 0; strip < 10; ++strip)
-      g.terrain[row][strip] = {float((strip - 7) * 6), 0, float((row - 150) * 6)};
-  g.terrain[151][8].y = 6;
-  float bank_height = 0;
-  check(g.surface_height({4, 0, 4}, bank_height) && std::abs(bank_height - 2.f) < .0001f,
+  GameState.Segment = 150;
+  for (int Row = 0; Row < NodeCount; ++Row)
+    for (int Strip = 0; Strip < 10; ++Strip)
+      GameState.Terrain[Row][Strip] = {float((Strip - 7) * 6), 0, float((Row - 150) * 6)};
+  GameState.Terrain[151][8].CoordinateY = 6;
+  float BankHeight = 0;
+  Check(GameState.SurfaceHeight({4, 0, 4}, BankHeight) && std::abs(BankHeight - 2.f) < .0001f,
         "right bank uses the rendered outside-in triangle diagonal");
-  int scenarios = 0;
-  float max_air = 0;
-  for (int track = 0; track < TrackCount; ++track)
-    for (int car = 0; car < CarCount; ++car)
-      for (int node : {20, 45, 95, 120, 145, 156, 170, 200, 246, 280})
-        for (int sign : {-1, 1}) {
-          g.select(car, track);
-          g.mode = Mode::Racing;
-          bool begun = false;
-          int perturbation = 0;
-          for (int frame = 0; frame < 10000 && g.mode != Mode::Finished; ++frame) {
-            auto in = driving_input(g);
-            if (g.segment >= node)
-              begun = true;
-            if (begun && perturbation++ < 120) {
-              in = {};
-              in.throttle = true;
-              in.left = sign < 0;
-              in.right = sign > 0;
+  int Scenarios = 0;
+  float MaximumAirborneFrames = 0;
+  for (int Track = 0; Track < TrackCount; ++Track)
+    for (int CarIndex = 0; CarIndex < CarCount; ++CarIndex)
+      for (int NodeIndex : {20, 45, 95, 120, 145, 156, 170, 200, 246, 280})
+        for (int Sign : {-1, 1}) {
+          GameState.SelectCarAndTrack(CarIndex, Track);
+          GameState.CurrentMode = GameMode::Racing;
+          bool Begun = false;
+          int Perturbation = 0;
+          for (int Frame = 0; Frame < 10000 && GameState.CurrentMode != GameMode::Finished;
+               ++Frame) {
+            auto PlayerInput = CalculateDrivingInput(GameState);
+            if (GameState.Segment >= NodeIndex)
+              Begun = true;
+            if (Begun && Perturbation++ < 120) {
+              PlayerInput = {};
+              PlayerInput.Throttle = true;
+              PlayerInput.Left = Sign < 0;
+              PlayerInput.Right = Sign > 0;
             }
-            g.tick(.02f, in);
-            check(std::isfinite(g.car.y) && std::isfinite(g.speed),
+            GameState.Update(.02f, PlayerInput);
+            Check(std::isfinite(GameState.CarPosition.CoordinateY) &&
+                      std::isfinite(GameState.Speed),
                   "off-road state remains finite");
-            check(std::abs(g.vertical_speed) <= 12.001f,
+            Check(std::abs(GameState.VerticalSpeed) <= 12.001f,
                   "banks cannot inject extreme launch speed");
-            max_air = std::max(max_air, g.car.y - g.ground_y);
-            if (!g.airborne && std::abs(g.lateral) > g.road_width()) {
-              float surface = 0;
-              check(g.surface_height(g.car, surface), "off-road car has rendered ground support");
-              check(std::abs(g.car.y - surface) < .13f, "grounded car follows visible terrain");
+            MaximumAirborneFrames = std::max(MaximumAirborneFrames,
+                                             GameState.CarPosition.CoordinateY - GameState.GroundY);
+            if (!GameState.Airborne && std::abs(GameState.Lateral) > GameState.RoadWidth()) {
+              float Surface = 0;
+              Check(GameState.SurfaceHeight(GameState.CarPosition, Surface),
+                    "off-road car has rendered ground support");
+              Check(std::abs(GameState.CarPosition.CoordinateY - Surface) < .13f,
+                    "grounded car follows visible terrain");
             }
-            if (begun && frame % 20 == 0) {
-              renderer.render(g, pixels.data());
-              check(renderer.dropped == 0, "off-road views stay within geometry capacity");
+            if (Begun && Frame % 20 == 0) {
+              SceneRenderer.Render(GameState, Pixels.data());
+              Check(SceneRenderer.Dropped == 0, "off-road views stay within geometry capacity");
             }
-            if (begun && perturbation > 620)
+            if (Begun && Perturbation > 620)
               break;
           }
-          check(begun, "off-road perturbation reaches requested course region");
-          ++scenarios;
+          Check(Begun, "off-road perturbation reaches requested course region");
+          ++Scenarios;
         }
-  check(max_air < 3.f, "ordinary off-road excursions do not fly high above the course");
-  g.select(1, 2);
-  g.mode = Mode::Racing;
-  const auto before = g.car;
-  g.tick(NAN, {});
-  g.tick(-1, {});
-  g.tick(0, {});
-  check(g.car.x == before.x && g.car.y == before.y && g.car.z == before.z,
+  Check(MaximumAirborneFrames < 3.f,
+        "ordinary off-road excursions do not fly high above the course");
+  GameState.SelectCarAndTrack(1, 2);
+  GameState.CurrentMode = GameMode::Racing;
+  const auto Before = GameState.CarPosition;
+  GameState.Update(NAN, {});
+  GameState.Update(-1, {});
+  GameState.Update(0, {});
+  Check(GameState.CarPosition.CoordinateX == Before.CoordinateX &&
+            GameState.CarPosition.CoordinateY == Before.CoordinateY &&
+            GameState.CarPosition.CoordinateZ == Before.CoordinateZ,
         "invalid frame deltas ignored");
   std::printf("PASS: journal power-loss/corruption, cumulative telemetry, %d public-input off-road "
               "excursions; max air %.3fm\n",
-              scenarios, max_air);
+              Scenarios, MaximumAirborneFrames);
 }

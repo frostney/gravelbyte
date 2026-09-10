@@ -1,5 +1,9 @@
 # Validation
 
+For the car-name migration and latest shadow fix, see
+[naming and shadow validation](naming-and-shadows.md). Earlier captures below
+retain the car labels and implementation details of their measured revisions.
+
 ## Audit, failure paths and accessible page update
 
 Seven native and seven ASan/UBSan suites pass, including 180 public-input off-road

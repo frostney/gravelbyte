@@ -9,210 +9,220 @@
 #include <cstring>
 #include <string>
 
-using namespace rally;
-static Game game;
-static Renderer renderer;
-static std::array<uint16_t, W * H> framebuffer;
-static std::array<uint32_t, W * H> rgba;
-static std::string save_path;
-static float audio_phase = 0;
-static SDL_AudioDeviceID audio_device = 0;
-static float sound_frequency = 70, sound_volume = 0;
-static void audio(void *, Uint8 *stream, int bytes) {
-  auto *samples = reinterpret_cast<int16_t *>(stream);
-  for (int i = 0; i < bytes / 2; ++i) {
-    audio_phase += sound_frequency / float(tuning::audio::SampleRate);
-    if (audio_phase >= 1)
-      audio_phase -= 1;
-    samples[i] = int16_t((audio_phase < .45f ? 1 : -1) * sound_volume * 1800);
+using namespace Rally;
+static Game GameState;
+static Renderer SceneRenderer;
+static std::array<uint16_t, FramebufferWidth * FramebufferHeight> Framebuffer;
+static std::array<uint32_t, FramebufferWidth * FramebufferHeight> RedGreenBlueAlpha;
+static std::string SavePath;
+static float AudioPhase = 0;
+static SDL_AudioDeviceID AudioDevice = 0;
+static float SoundFrequency = 70, SoundVolume = 0;
+static void GenerateAudio(void *, Uint8 *Stream, int Bytes) {
+  auto *Samples = reinterpret_cast<int16_t *>(Stream);
+  for (int Index = 0; Index < Bytes / 2; ++Index) {
+    AudioPhase += SoundFrequency / float(Tuning::Audio::SampleRate);
+    if (AudioPhase >= 1)
+      AudioPhase -= 1;
+    Samples[Index] = int16_t((AudioPhase < .45f ? 1 : -1) * SoundVolume * 1800);
   }
 }
-static void save() {
-  if (!game.save_requested)
+static void Save() {
+  if (!GameState.SaveRequested)
     return;
-  SaveData record = encode_save(game);
-  std::string temporary = save_path + ".tmp";
-  if (FILE *file = std::fopen(temporary.c_str(), "wb")) {
-    const bool written = std::fwrite(&record, sizeof(record), 1, file) == 1;
-    const bool closed = std::fclose(file) == 0;
-    if (written && closed && std::rename(temporary.c_str(), save_path.c_str()) == 0)
-      game.save_requested = false;
+  SaveData SavedRecord = EncodeSave(GameState);
+  std::string Temporary = SavePath + ".tmp";
+  if (FILE *File = std::fopen(Temporary.c_str(), "wb")) {
+    const bool Written = std::fwrite(&SavedRecord, sizeof(SavedRecord), 1, File) == 1;
+    const bool Closed = std::fclose(File) == 0;
+    if (Written && Closed && std::rename(Temporary.c_str(), SavePath.c_str()) == 0)
+      GameState.SaveRequested = false;
   }
 }
-static void screenshot(const char *path) {
-  FILE *f = std::fopen(path, "wb");
-  if (!f) {
-    std::perror(path);
+static void Screenshot(const char *Path) {
+  FILE *FileHandle = std::fopen(Path, "wb");
+  if (!FileHandle) {
+    std::perror(Path);
     std::exit(2);
   }
-  std::fprintf(f, "P6\n%d %d\n255\n", W, H);
-  for (uint16_t c : framebuffer) {
-    unsigned char rgb[] = {uint8_t((c >> 12) * 17), uint8_t(((c >> 8) & 15) * 17),
-                           uint8_t(((c >> 4) & 15) * 17)};
-    std::fwrite(rgb, 1, 3, f);
+  std::fprintf(FileHandle, "P6\n%d %d\n255\n", FramebufferWidth, FramebufferHeight);
+  for (uint16_t ColorValue : Framebuffer) {
+    unsigned char RedGreenBlue[] = {uint8_t((ColorValue >> 12) * 17),
+                                    uint8_t(((ColorValue >> 8) & 15) * 17),
+                                    uint8_t(((ColorValue >> 4) & 15) * 17)};
+    std::fwrite(RedGreenBlue, 1, 3, FileHandle);
   }
-  std::fclose(f);
+  std::fclose(FileHandle);
 }
-int main(int argc, char **argv) {
-  game.controls = Controls::Keyboard;
-  if (argc > 1 && std::strcmp(argv[1], "--capture") == 0) {
-    int segment = argc > 3 ? std::atoi(argv[3]) : 20;
-    segment = std::max(0, std::min(NodeCount - 2, segment));
-    if (argc > 6)
-      game.select(std::atoi(argv[5]), std::atoi(argv[6]));
-    game.segment = segment;
-    game.car = game.road[segment].p;
-    game.yaw = game.road[segment].heading;
-    game.camera_yaw = game.yaw;
-    game.ground_y = game.car.y;
-    game.camera_height = game.car.y;
-    game.pitch = (game.road[segment + 1].p.y - game.road[segment].p.y) / Step;
-    game.roll = game.road[segment].bank;
-    game.mode = Mode::Racing;
-    game.elapsed = 32.45f;
-    game.speed = 22.8f;
-    if (argc > 4 && std::strcmp(argv[4], "cars") == 0)
-      game.mode = Mode::CarSelect;
-    if (argc > 4 && std::strcmp(argv[4], "tracks") == 0)
-      game.mode = Mode::TrackSelect;
-    if (argc > 4 && std::strcmp(argv[4], "title") == 0)
-      game.mode = Mode::Title;
-    if (argc > 4 && std::strcmp(argv[4], "finish") == 0) {
-      game = Game{};
-      for (int i = 0; i < 15000 && game.mode != Mode::Finished; ++i)
-        game.tick(.02f, test_driver(game));
+int main(int ArgumentCount, char **Arguments) {
+  GameState.ControlScheme = Controls::Keyboard;
+  if (ArgumentCount > 1 && std::strcmp(Arguments[1], "--capture") == 0) {
+    int Segment = ArgumentCount > 3 ? std::atoi(Arguments[3]) : 20;
+    Segment = std::max(0, std::min(NodeCount - 2, Segment));
+    if (ArgumentCount > 6)
+      GameState.SelectCarAndTrack(std::atoi(Arguments[5]), std::atoi(Arguments[6]));
+    GameState.Segment = Segment;
+    GameState.CarPosition = GameState.Road[Segment].Position;
+    GameState.Yaw = GameState.Road[Segment].Heading;
+    GameState.CameraYaw = GameState.Yaw;
+    GameState.GroundY = GameState.CarPosition.CoordinateY;
+    GameState.CameraHeight = GameState.CarPosition.CoordinateY;
+    GameState.Pitch = (GameState.Road[Segment + 1].Position.CoordinateY -
+                       GameState.Road[Segment].Position.CoordinateY) /
+                      TrackSegmentLength;
+    GameState.Roll = GameState.Road[Segment].Bank;
+    GameState.CurrentMode = GameMode::Racing;
+    GameState.Elapsed = 32.45f;
+    GameState.Speed = 22.8f;
+    if (ArgumentCount > 4 && std::strcmp(Arguments[4], "cars") == 0)
+      GameState.CurrentMode = GameMode::CarSelect;
+    if (ArgumentCount > 4 && std::strcmp(Arguments[4], "tracks") == 0)
+      GameState.CurrentMode = GameMode::TrackSelect;
+    if (ArgumentCount > 4 && std::strcmp(Arguments[4], "title") == 0)
+      GameState.CurrentMode = GameMode::Title;
+    if (ArgumentCount > 4 && std::strcmp(Arguments[4], "finish") == 0) {
+      GameState = Game{};
+      for (int Index = 0; Index < 15000 && GameState.CurrentMode != GameMode::Finished; ++Index)
+        GameState.Update(.02f, TestDriver(GameState));
     }
-    if (argc > 4 && std::strcmp(argv[4], "pause") == 0)
-      game.mode = Mode::Paused;
-    if (argc > 7)
-      game.cinematic_time = std::atof(argv[7]);
-    if (argc > 8)
-      game.menu_rotation = std::atof(argv[8]);
-    renderer.render(game, framebuffer.data());
-    screenshot(argc > 2 ? argv[2] : "frame.ppm");
-    std::printf("Captured %d triangles; %d dropped\n", renderer.face_count, renderer.dropped);
+    if (ArgumentCount > 4 && std::strcmp(Arguments[4], "pause") == 0)
+      GameState.CurrentMode = GameMode::Paused;
+    if (ArgumentCount > 7)
+      GameState.CinematicTime = std::atof(Arguments[7]);
+    if (ArgumentCount > 8)
+      GameState.MenuRotation = std::atof(Arguments[8]);
+    SceneRenderer.Render(GameState, Framebuffer.data());
+    Screenshot(ArgumentCount > 2 ? Arguments[2] : "frame.ppm");
+    std::printf("Captured %d triangles; %d dropped\n", SceneRenderer.FaceCount,
+                SceneRenderer.Dropped);
     return 0;
   }
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
     std::fprintf(stderr, "%s\n", SDL_GetError());
     return 1;
   }
-  char *prefs = SDL_GetPrefPath("gravelbyte", "gravelbyte");
-  if (!prefs) {
+  char *Preferences = SDL_GetPrefPath("gravelbyte", "gravelbyte");
+  if (!Preferences) {
     std::fprintf(stderr, "No writable save directory: %s\n", SDL_GetError());
     SDL_Quit();
     return 1;
   }
-  save_path = std::string(prefs) + "records-v1.best";
-  SDL_free(prefs);
-  if (FILE *file = std::fopen(save_path.c_str(), "rb")) {
-    SaveData record{};
-    if (std::fread(&record, sizeof(record), 1, file) == 1)
-      load_save(game, record);
-    std::fclose(file);
-  } else if (char *legacy_prefs = SDL_GetPrefPath("picorally", "picorally")) {
-    const std::string legacy_path = std::string(legacy_prefs) + "stage-v3.best";
-    SDL_free(legacy_prefs);
-    if (FILE *file = std::fopen(legacy_path.c_str(), "rb")) {
-      SaveRecord legacy{};
-      if (std::fread(&legacy, sizeof(legacy), 1, file) == 1) {
-        load_best(game, legacy);
-        game.save_requested = game.best > 0;
+  SavePath = std::string(Preferences) + "records-v1.best";
+  SDL_free(Preferences);
+  if (FILE *File = std::fopen(SavePath.c_str(), "rb")) {
+    SaveData SavedRecord{};
+    if (std::fread(&SavedRecord, sizeof(SavedRecord), 1, File) == 1)
+      LoadSave(GameState, SavedRecord);
+    std::fclose(File);
+  } else if (char *LegacyPreferences = SDL_GetPrefPath("picorally", "picorally")) {
+    const std::string LegacyPath = std::string(LegacyPreferences) + "stage-v3.best";
+    SDL_free(LegacyPreferences);
+    if (FILE *File = std::fopen(LegacyPath.c_str(), "rb")) {
+      SaveRecord Legacy{};
+      if (std::fread(&Legacy, sizeof(Legacy), 1, File) == 1) {
+        LoadBest(GameState, Legacy);
+        GameState.SaveRequested = GameState.Best > 0;
       }
-      std::fclose(file);
+      std::fclose(File);
     }
   }
-  SDL_Window *window = SDL_CreateWindow("gravelbyte — PicoSystem preview", SDL_WINDOWPOS_CENTERED,
+  SDL_Window *Window = SDL_CreateWindow("gravelbyte — PicoSystem preview", SDL_WINDOWPOS_CENTERED,
                                         SDL_WINDOWPOS_CENTERED, 720, 720,
                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-  SDL_Renderer *screen =
-      window ? SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
+  SDL_Renderer *Screen =
+      Window ? SDL_CreateRenderer(Window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
              : nullptr;
-  if (!screen) {
+  if (!Screen) {
     std::fprintf(stderr, "%s\n", SDL_GetError());
     SDL_Quit();
     return 1;
   }
-  SDL_RenderSetLogicalSize(screen, W, H);
+  SDL_RenderSetLogicalSize(Screen, FramebufferWidth, FramebufferHeight);
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-  SDL_Texture *texture =
-      SDL_CreateTexture(screen, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, W, H);
-  if (!texture) {
+  SDL_Texture *Texture =
+      SDL_CreateTexture(Screen, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                        FramebufferWidth, FramebufferHeight);
+  if (!Texture) {
     std::fprintf(stderr, "%s\n", SDL_GetError());
     SDL_Quit();
     return 1;
   }
-  SDL_AudioSpec spec{};
-  spec.freq = tuning::audio::SampleRate;
-  spec.format = AUDIO_S16SYS;
-  spec.channels = 1;
-  spec.samples = 512;
-  spec.callback = audio;
-  audio_device = SDL_OpenAudioDevice(nullptr, 0, &spec, nullptr, 0);
-  if (audio_device)
-    SDL_PauseAudioDevice(audio_device, 0);
-  bool running = true, diagnostics = false;
-  uint64_t last = SDL_GetPerformanceCounter();
-  while (running) {
-    Input input{};
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-      if (e.type == SDL_QUIT)
-        running = false;
-      if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
-          (game.mode == Mode::Racing || game.mode == Mode::Countdown))
-        input.pause = true;
-      if (e.type == SDL_KEYDOWN && !e.key.repeat) {
-        if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_z)
-          input.action = true;
-        if (e.key.keysym.sym == SDLK_ESCAPE)
-          input.back = true;
-        if (e.key.keysym.sym == SDLK_p)
-          input.pause = true;
-        if (e.key.keysym.sym == SDLK_F1)
-          diagnostics = !diagnostics;
-        if (e.key.keysym.sym == SDLK_SPACE)
-          input.auxiliary = true;
-        if (e.key.keysym.sym == SDLK_m)
-          input.mute = true;
+  SDL_AudioSpec AudioSpecification{};
+  AudioSpecification.freq = Tuning::Audio::SampleRate;
+  AudioSpecification.format = AUDIO_S16SYS;
+  AudioSpecification.channels = 1;
+  AudioSpecification.samples = 512;
+  AudioSpecification.callback = GenerateAudio;
+  AudioDevice = SDL_OpenAudioDevice(nullptr, 0, &AudioSpecification, nullptr, 0);
+  if (AudioDevice)
+    SDL_PauseAudioDevice(AudioDevice, 0);
+  bool Running = true, Diagnostics = false;
+  uint64_t Last = SDL_GetPerformanceCounter();
+  while (Running) {
+    DrivingInput PlayerInput{};
+    SDL_Event Event;
+    while (SDL_PollEvent(&Event)) {
+      if (Event.type == SDL_QUIT)
+        Running = false;
+      if (Event.type == SDL_WINDOWEVENT && Event.window.event == SDL_WINDOWEVENT_FOCUS_LOST &&
+          (GameState.CurrentMode == GameMode::Racing ||
+           GameState.CurrentMode == GameMode::Countdown))
+        PlayerInput.Pause = true;
+      if (Event.type == SDL_KEYDOWN && !Event.key.repeat) {
+        if (Event.key.keysym.sym == SDLK_RETURN || Event.key.keysym.sym == SDLK_z)
+          PlayerInput.Action = true;
+        if (Event.key.keysym.sym == SDLK_ESCAPE)
+          PlayerInput.Back = true;
+        if (Event.key.keysym.sym == SDLK_p)
+          PlayerInput.Pause = true;
+        if (Event.key.keysym.sym == SDLK_F1)
+          Diagnostics = !Diagnostics;
+        if (Event.key.keysym.sym == SDLK_SPACE)
+          PlayerInput.Auxiliary = true;
+        if (Event.key.keysym.sym == SDLK_m)
+          PlayerInput.Mute = true;
       }
     }
-    const Uint8 *keys = SDL_GetKeyboardState(nullptr);
-    input.left = keys[SDL_SCANCODE_LEFT];
-    input.right = keys[SDL_SCANCODE_RIGHT];
-    input.throttle = keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_UP];
-    input.brake = keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_DOWN];
-    input.handbrake = keys[SDL_SCANCODE_SPACE];
-    uint64_t now = SDL_GetPerformanceCounter();
-    float dt = float(double(now - last) / double(SDL_GetPerformanceFrequency()));
-    last = now;
-    game.tick(dt, input);
-    save();
-    if (audio_device) {
-      SDL_LockAudioDevice(audio_device);
-      sound_frequency = tuning::audio::BaseFrequency + game.speed * tuning::audio::SpeedFrequency;
-      sound_volume = (!game.muted && (game.mode == Mode::Racing || game.mode == Mode::Title ||
-                                      game.mode == Mode::Finished))
-                         ? (game.impact > 0 ? .7f : .25f)
-                         : 0;
-      SDL_UnlockAudioDevice(audio_device);
+    const Uint8 *Keys = SDL_GetKeyboardState(nullptr);
+    PlayerInput.Left = Keys[SDL_SCANCODE_LEFT];
+    PlayerInput.Right = Keys[SDL_SCANCODE_RIGHT];
+    PlayerInput.Throttle = Keys[SDL_SCANCODE_Z] || Keys[SDL_SCANCODE_UP];
+    PlayerInput.Brake = Keys[SDL_SCANCODE_X] || Keys[SDL_SCANCODE_DOWN];
+    PlayerInput.Handbrake = Keys[SDL_SCANCODE_SPACE];
+    uint64_t Now = SDL_GetPerformanceCounter();
+    float DeltaTimeSeconds = float(double(Now - Last) / double(SDL_GetPerformanceFrequency()));
+    Last = Now;
+    GameState.Update(DeltaTimeSeconds, PlayerInput);
+    Save();
+    if (AudioDevice) {
+      SDL_LockAudioDevice(AudioDevice);
+      SoundFrequency =
+          Tuning::Audio::BaseFrequency + GameState.Speed * Tuning::Audio::SpeedFrequency;
+      SoundVolume = (!GameState.Muted && (GameState.CurrentMode == GameMode::Racing ||
+                                          GameState.CurrentMode == GameMode::Title ||
+                                          GameState.CurrentMode == GameMode::Finished))
+                        ? (GameState.Impact > 0 ? .7f : .25f)
+                        : 0;
+      SDL_UnlockAudioDevice(AudioDevice);
     }
-    renderer.render(game, framebuffer.data(), dt > 0 ? int(1 / dt) : 0, diagnostics);
-    for (int i = 0; i < W * H; ++i) {
-      uint16_t c = framebuffer[i];
-      rgba[i] = 0xff000000u | ((c >> 12) * 17u << 16) | (((c >> 8) & 15) * 17u << 8) |
-                (((c >> 4) & 15) * 17u);
+    SceneRenderer.Render(GameState, Framebuffer.data(),
+                         DeltaTimeSeconds > 0 ? int(1 / DeltaTimeSeconds) : 0, Diagnostics);
+    for (int Index = 0; Index < FramebufferWidth * FramebufferHeight; ++Index) {
+      uint16_t ColorValue = Framebuffer[Index];
+      RedGreenBlueAlpha[Index] = 0xff000000u | ((ColorValue >> 12) * 17u << 16) |
+                                 (((ColorValue >> 8) & 15) * 17u << 8) |
+                                 (((ColorValue >> 4) & 15) * 17u);
     }
-    SDL_UpdateTexture(texture, nullptr, rgba.data(), W * 4);
-    SDL_SetRenderDrawColor(screen, 12, 18, 18, 255);
-    SDL_RenderClear(screen);
-    SDL_RenderCopy(screen, texture, nullptr, nullptr);
-    SDL_RenderPresent(screen);
+    SDL_UpdateTexture(Texture, nullptr, RedGreenBlueAlpha.data(), FramebufferWidth * 4);
+    SDL_SetRenderDrawColor(Screen, 12, 18, 18, 255);
+    SDL_RenderClear(Screen);
+    SDL_RenderCopy(Screen, Texture, nullptr, nullptr);
+    SDL_RenderPresent(Screen);
   }
-  if (audio_device)
-    SDL_CloseAudioDevice(audio_device);
-  SDL_DestroyTexture(texture);
-  SDL_DestroyRenderer(screen);
-  SDL_DestroyWindow(window);
+  if (AudioDevice)
+    SDL_CloseAudioDevice(AudioDevice);
+  SDL_DestroyTexture(Texture);
+  SDL_DestroyRenderer(Screen);
+  SDL_DestroyWindow(Window);
   SDL_Quit();
 }
