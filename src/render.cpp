@@ -524,6 +524,30 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
   const int ahead = reverse_view ? tuning::RoadBehind : tuning::RoadAhead;
   const int first = std::max(0, g.segment - behind),
             last = std::min(NodeCount - 1, g.segment + ahead);
+  if (!showroom && g.selected_track == 2 && last >= tuning::TunnelStart &&
+      first <= tuning::TunnelEnd) {
+    // Broad, cached rock/snow panels enclose the detailed tunnel interior.
+    for (int k = 0; k < tuning::MountainSections; ++k) {
+      const auto &a = g.mountain[k], &b = g.mountain[k + 1];
+      quad(a[0], b[0], b[1], a[1], color(7, 8, 10));
+      quad(a[1], b[1], b[2], a[2], color(11, 13, 14));
+      quad(a[2], b[2], b[3], a[3], color(14, 15, 15));
+      quad(a[3], b[3], b[4], a[4], color(7, 8, 10));
+    }
+    for (int k : {0, tuning::MountainSections}) {
+      int node = k == 0 ? tuning::TunnelStart : tuning::TunnelEnd;
+      const auto &ring = g.mountain[k];
+      for (int sign : {-1, 1}) {
+        Vec bottom = g.roadside(node, sign * (g.road[node].half_width + tuning::RailMargin));
+        Vec top = bottom + Vec{0, tuning::TunnelHeight, 0};
+        Vec outer = ring[sign < 0 ? 0 : 4], shoulder = ring[sign < 0 ? 1 : 3];
+        quad(outer, bottom, top, shoulder, color(7, 8, 9));
+        triangle(shoulder, top, ring[2], color(10, 11, 12));
+        Vec center = g.road[node].p + Vec{0, tuning::TunnelHeight, 0};
+        triangle(top, center, ring[2], color(12, 13, 14));
+      }
+    }
+  }
   for (int i = first; !showroom && i < last; ++i) {
     shadow_enabled = std::abs(i - g.segment) <= 2;
     auto at = [&](int j, float side, float rise = 0.f) {
@@ -632,38 +656,6 @@ void Renderer::render(const Game &g, uint16_t *target, int fps, bool diagnostics
         Vec c = at(i + 1, g.road[i + 1].half_width + tuning::RailMargin, tuning::TunnelHeight);
         Vec d = at(i + 1, -g.road[i + 1].half_width - tuning::RailMargin, tuning::TunnelHeight);
         quad(a, b, c, d, color(4, 5, 6));
-        // The tunnel is bored through a broad mountain, with exposed rock below
-        // snow-covered slopes. Corridor bounds prevent the mountain crossing a
-        // neighbouring bend. Portal faces surround, never cover, the opening.
-        auto peak = [&](int node) {
-          float t = float(node - tuning::TunnelStart) / (tuning::TunnelEnd - tuning::TunnelStart);
-          return g.road[node].p + Vec{0, tuning::MountainPeak - 12.f * std::abs(t * 2.f - 1.f), 0};
-        };
-        Vec ridge = peak(i), next_ridge = peak(i + 1);
-        for (int sign : {-1, 1}) {
-          auto foot = [&](int node) {
-            float far = sign < 0 ? g.road[node].far_left : g.road[node].far_right;
-            return at(node, sign * std::min(tuning::MountainWidth, far));
-          };
-          Vec base = foot(i), next_base = foot(i + 1);
-          Vec shoulder = base + (ridge - base) * .45f;
-          Vec next_shoulder = next_base + (next_ridge - next_base) * .45f;
-          quad(base, next_base, next_shoulder, shoulder, color(7, 8, 10));
-          quad(shoulder, next_shoulder, next_ridge, ridge,
-               sign < 0 ? color(11, 13, 14) : color(14, 15, 15));
-          if (i == tuning::TunnelStart || i == tuning::TunnelEnd - 1) {
-            int node = i == tuning::TunnelStart ? i : i + 1;
-            Vec bottom = at(node, sign * (g.road[node].half_width + tuning::RailMargin));
-            Vec top = bottom + Vec{0, tuning::TunnelHeight, 0};
-            Vec outer = node == i ? base : next_base;
-            Vec shoulder_edge = node == i ? shoulder : next_shoulder;
-            Vec summit = peak(node);
-            quad(outer, bottom, top, shoulder_edge, color(7, 8, 9));
-            triangle(shoulder_edge, top, summit, color(10, 11, 12));
-            Vec center = g.road[node].p + Vec{0, tuning::TunnelHeight + .2f, 0};
-            triangle(top, center, summit, color(12, 13, 14));
-          }
-        }
         if (i % 3 == 0) {
           Vec lamp = at(i, 0, tuning::TunnelHeight - .12f);
           box(lamp, {1.2f, .06f, .5f}, g.road[i].heading, color(15, 14, 9));

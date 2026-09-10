@@ -135,6 +135,19 @@ void Game::build_track() {
     for (int side = 0; side < 10; ++side)
       terrain[i][side] = roadside(i, sides[side]);
   }
+  // A coarse outer massif is static; keep its terrain sampling out of rendering.
+  if (selected_track == 2)
+    for (int k = 0; k <= tuning::MountainSections; ++k) {
+      float t = float(k) / tuning::MountainSections;
+      int node = tuning::TunnelStart +
+                 k * (tuning::TunnelEnd - tuning::TunnelStart) / tuning::MountainSections;
+      auto &ring = mountain[k];
+      ring[2] = road[node].p + Vec{0, tuning::MountainPeak - 12.f * std::abs(t * 2.f - 1.f), 0};
+      ring[0] = roadside(node, -std::min(tuning::MountainWidth, road[node].far_left));
+      ring[4] = roadside(node, std::min(tuning::MountainWidth, road[node].far_right));
+      ring[1] = ring[0] + (ring[2] - ring[0]) * .45f;
+      ring[3] = ring[4] + (ring[2] - ring[4]) * .45f;
+    }
 }
 void Game::restart() {
   segment = 1;

@@ -31,6 +31,8 @@ to viewing direction. Tunnel approaches use a chase shot to keep the camera clea
 of the structure. Bridge roadside shots stay above deck height. Nearby trees use
 full 3D visible faces; distant trees switch to lighter geometry at 72m. The road
 view extends 24 nodes ahead, retaining the 3D road and original simulation.
+The tunnel mountain uses four broad longitudinal sections with 300 bytes of
+precomputed vertices; its detailed interior follows every original road node.
 
 Reusable tuning values live in `src/tuning.hpp`. Authored bends, geometry vertices,
 car profiles and target times remain data rather than unrelated global constants.

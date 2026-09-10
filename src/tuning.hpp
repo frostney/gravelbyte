@@ -23,6 +23,7 @@ constexpr float ReplayInterval = .1f, PoseScale = 64.f, AngleScale = 32767.f / P
 constexpr int BridgeStart = 42, BridgeEnd = 52, TunnelStart = 115, TunnelEnd = 131;
 constexpr int CoastStart = 0, CoastEnd = 300;
 constexpr float PalmLean = .8f, PalmCrownRadius = 3.f, PalmTrunkWidth = .32f;
+constexpr int MountainSections = 4;
 constexpr float MountainWidth = 36.f, MountainPeak = 34.f;
 constexpr float RailMargin = .8f, CarClearance = .95f, TunnelHeight = 6.5f;
 constexpr float RiverDrop = 7.f, BeachDrop = 2.f;

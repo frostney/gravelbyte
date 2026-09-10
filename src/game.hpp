@@ -56,6 +56,7 @@ static_assert(sizeof(ReplayPose) == 12);
 struct Game {
   std::array<Node, NodeCount> road{};
   std::array<std::array<Vec, 10>, NodeCount> terrain{};
+  std::array<std::array<Vec, 5>, tuning::MountainSections + 1> mountain{};
   Vec car{}, velocity{};
   float yaw = 0, camera_yaw = 0, speed = 0, steer = 0, lateral = 0, route_t = 0;
   float elapsed = 0, countdown = 3, best = 0, previous_best = 0;
