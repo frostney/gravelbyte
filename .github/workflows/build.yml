@@ -41,6 +41,7 @@ jobs:
           emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-web
           npm ci
+          npm run format:web:check
           npx playwright install --with-deps chromium
           npm run test:web
       - name: Arm GNU 15.3.Rel1

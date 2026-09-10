@@ -2,6 +2,13 @@
   "name": "gravelbyte-web-tests",
   "private": true,
   "type": "module",
-  "scripts": {"test:web": "playwright test"},
-  "devDependencies": {"@playwright/test": "1.63.0"}
+  "scripts": {
+    "test:web": "playwright test",
+    "format:web": "prettier --write \"site/*.{js,css,html}\" \"tests/web/*.js\" playwright.config.js package.json .prettierrc.json",
+    "format:web:check": "prettier --check \"site/*.{js,css,html}\" \"tests/web/*.js\" playwright.config.js package.json .prettierrc.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "prettier": "3.9.6"
+  }
 }

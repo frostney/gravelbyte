@@ -67,8 +67,10 @@ emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build build-web -j
 python3 -m http.server 8173 --directory build-web/site
 
-# Browser integration tests
+# Web formatting and browser integration tests
 npm ci
+npm run format:web:check
+# Use npm run format:web to apply the pinned Prettier style.
 npx playwright install chromium
 npm run test:web
 
