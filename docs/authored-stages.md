@@ -37,5 +37,9 @@ shifts, terrain/shadow regressions and flash corruption/interrupted writes.
 Real-save hardware testing also covers six verified writes and pause/resume.
 The first-hint flag is saved during countdown, while its hint remains visible;
 flash writes are deferred during racing. This fixes a measured 76ms startup
-hitch that the non-saving benchmark could not reveal. Hardware race results are
-recorded separately after the final complete device run.
+hitch that the non-saving benchmark could not reveal. The final nine audio-enabled device races cover 35,606 frames at
+39.508fps, with no frames below 30fps, recoveries, dropped triangles
+or geometry overflows. See `authored-device-results.json` for per-race results and
+artifact hashes. The verified normal player was restored after diagnostics;
+the benchmark left both journal sectors unchanged. These automated drives do
+not replace human playtesting of the new medal thresholds.
