@@ -66,14 +66,75 @@ struct ReplayPose {
   int8_t Pitch, Roll;
 };
 static_assert(sizeof(ReplayPose) == 12);
-struct Game {
+struct VehicleState {
+  Vector3 CarPosition{}, Velocity{};
+  float Yaw = 0, CameraYaw = 0, Speed = 0, SteeringInput = 0, Lateral = 0, SegmentFraction = 0;
+  float Impact = 0, Stranded = 0, RecoveryMessage = 0, Slip = 0;
+  float GroundY = 0, VerticalSpeed = 0, Pitch = 0, Roll = 0, CameraHeight = 0;
+  float SplitMessage = 0, SplitDelta = 0;
+  int Jumps = 0;
+  bool Airborne = false, SurfaceAvailable = true, StartHeld = true;
+  int Segment = 0, Furthest = 0, Recoveries = 0;
+};
+struct PracticeSnapshot : VehicleState {
+  float Elapsed = 0;
+  int SplitCount = 0;
+  std::array<float, SectorCount> Splits{};
+};
+struct VehiclePose {
+  Vector3 Position;
+  float Yaw = 0, Pitch = 0, Roll = 0, Speed = 0;
+  int Segment = 0;
+};
+struct Game : VehicleState {
+  const ReplayPose *GhostPoses = nullptr;
+  int GhostCount = 0;
+  float GhostInterval = 0, GhostDuration = 0;
+  bool GhostSaveRequested = false;
+  uint32_t GhostLoadGeneration = 0;
+  void ClearGhost() {
+    GhostPoses = nullptr;
+    GhostCount = 0;
+    ++GhostLoadGeneration;
+  }
+  bool GhostPose(VehiclePose &Pose) const;
+  PracticeSnapshot LastSplit;
+  bool Practice = false;
+  float ReplayOriginTime = 0;
+  void CaptureSplit();
+  void RetrySplit();
+  VehiclePose SampleReplay(const ReplayPose *Poses, int Count, float Interval, float Duration,
+                           float Time) const;
   float SegmentLength = TrackSegmentLength;
   std::array<int, SectorCount> SectorEnds = GetStageLayout(0).Checkpoints;
   bool SteeringAssist = false, PaceNotes = true, DriftHintSeen = false, DemoDrifting = false;
   bool ShowDriftHint = false;
   int SelectedVariant = 0;
+  struct StageFeatures {
+    int BridgeStart = -1, BridgeEnd = -1, TunnelStart = -1, TunnelEnd = -1;
+    int Crest = -1, SurfaceStart = -1, SurfaceEnd = -1;
+  } Features;
+  std::array<AuthoredCorner, 18> VariantCorners{};
+  StageLayout Layout() const;
+  void SelectVariant(int Variant);
+  bool VariantUnlocked() const;
+  int SourceNode(int Index) const { return SelectedVariant & 1 ? 298 - Index : Index; }
+  int CoastSide() const {
+    return ((SelectedVariant & 1) != 0) != ((SelectedVariant & 2) != 0) ? -1 : 1;
+  }
+  std::array<float, SectorCount> VariantTargets{};
   bool GhostVisible = true;
   uint32_t ChallengeSeed = 1;
+  bool Challenge = false, SeedEditor = false, RandomRequested = false;
+  uint32_t EditingSeed = 0;
+  int SeedDigit = 0;
+  RandomStage GeneratedStage;
+  std::array<StageRecord, CarCount * 2> ChallengeRecords{};
+  std::array<float, SectorCount> ChallengeTargets{};
+  void SetChallengeSeed(uint32_t Seed);
+  void ChooseCourse(int Choice);
+  int CourseChoice() const { return Challenge ? TrackCount : SelectedTrack; }
+  StageLayout BaseLayout() const;
   int RecordIndex() const;
   static int RecordIndex(int Track, int Car, int Variant, bool Assisted);
   void ToggleAssist();
@@ -84,16 +145,9 @@ struct Game {
   std::array<TrackNode, NodeCount> Road{};
   std::array<std::array<Vector3, 10>, NodeCount> Terrain{};
   std::array<std::array<Vector3, 5>, Tuning::MountainSections + 1> Mountain{};
-  Vector3 CarPosition{}, Velocity{};
-  float Yaw = 0, CameraYaw = 0, Speed = 0, SteeringInput = 0, Lateral = 0, SegmentFraction = 0;
   float Elapsed = 0, Countdown = 3, Best = 0, PreviousBest = 0;
-  float Impact = 0, Stranded = 0, RecoveryMessage = 0, Slip = 0;
-  float GroundY = 0, VerticalSpeed = 0, Pitch = 0, Roll = 0, CameraHeight = 0;
-  float SplitMessage = 0, SplitDelta = 0;
   std::array<float, SectorCount> Splits{}, BestSplits{}, ReferenceSplits = DefaultSplits;
-  int SplitCount = 0, Jumps = 0;
-  bool Airborne = false, SurfaceAvailable = true, StartHeld = true;
-  int Segment = 0, Furthest = 0, Recoveries = 0;
+  int SplitCount = 0;
   GameMode CurrentMode = GameMode::Title, ResumeMode = GameMode::Racing;
   bool NewRecord = false, SaveRequested = false;
   int SelectedCar = 1, SelectedTrack = 0;
@@ -101,7 +155,8 @@ struct Game {
   bool OptionsOpen = false;
   int MenuSelection = 0;
   const char *MenuChoice() const;
-  int TitleCar = 1, TitleTrack = 0;
+  int TitleCar = 1, TitleTrack = 0, TitleVariant = 0;
+  bool TitleChallenge = false;
   float CinematicTime = 0, DemoTime = 0;
   std::array<float, SectorCount> PriorSplits{};
   std::array<ReplayPose, Tuning::ReplayCapacity> Replay{};
@@ -221,6 +276,9 @@ struct Renderer {
   void RenderScenery(const Game &GameState, int NodeIndex);
   void RenderTrackObjects(const Game &GameState, int NodeIndex);
   void RenderCar(const Game &GameState);
+  void RenderVehicle(const CarSpecification &Specification, int CarIndex, const VehiclePose &Pose,
+                     bool Simplified = false);
+  void RenderGhost(const Game &GameState);
   void RenderTrackMap(const Game &GameState);
   void DrawLine(int StartX, int StartY, int EndX, int EndY, uint16_t Color);
   void RenderInterface(const Game &GameState, int FramesPerSecond, bool Diagnostics);

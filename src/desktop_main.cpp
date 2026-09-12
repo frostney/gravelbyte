@@ -1,4 +1,5 @@
 #include "game.hpp"
+#include "ghost.hpp"
 #include "test_driver.hpp"
 #include <SDL.h>
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <string>
 
 using namespace GravelByte;
@@ -31,7 +33,42 @@ static void GenerateAudio(void *, Uint8 *Stream, int Bytes) {
 #endif
   }
 }
+static GhostTransfer GhostBuffer;
+static int LoadedGhostSlot = -1;
+static void UpdateGhostStorage() {
+  static uint32_t Generation = UINT32_MAX;
+  const std::string Prefix = SavePath + ".ghost-" + std::to_string(GameState.RecordIndex()) + "-";
+  if (GameState.GhostSaveRequested) {
+    GameState.GhostSaveRequested = false;
+    const std::string Path = Prefix + std::to_string(LoadedGhostSlot == 0 ? 1 : 0);
+    FillGhostTransfer(GameState, GhostBuffer);
+    const std::string Temporary = Path + ".tmp";
+    if (FILE *File = std::fopen(Temporary.c_str(), "wb")) {
+      const bool Written = std::fwrite(&GhostBuffer, sizeof(GhostBuffer), 1, File) == 1;
+      const bool Closed = std::fclose(File) == 0;
+      if (Written && Closed)
+        std::rename(Temporary.c_str(), Path.c_str());
+    }
+    GameState.ClearGhost();
+  }
+  if (Generation == GameState.GhostLoadGeneration)
+    return;
+  Generation = GameState.GhostLoadGeneration;
+  LoadedGhostSlot = -1;
+  for (int Slot = 0; Slot < 2; ++Slot) {
+    const std::string Path = Prefix + std::to_string(Slot);
+    if (FILE *File = std::fopen(Path.c_str(), "rb")) {
+      const bool Read = std::fread(&GhostBuffer, sizeof(GhostBuffer), 1, File) == 1;
+      std::fclose(File);
+      if (Read && AttachGhost(GameState, GhostBuffer)) {
+        LoadedGhostSlot = Slot;
+        break;
+      }
+    }
+  }
+}
 static void Save() {
+  UpdateGhostStorage();
   if (!GameState.SaveRequested)
     return;
   SaveData SavedRecord = EncodeSave(GameState);
@@ -60,6 +97,8 @@ static void Screenshot(const char *Path) {
 }
 int main(int ArgumentCount, char **Arguments) {
   GameState.ControlScheme = Controls::Keyboard;
+  std::random_device Random;
+  GameState.ChallengeSeed = Random();
   if (ArgumentCount > 1 && std::strcmp(Arguments[1], "--capture") == 0) {
     int Segment = ArgumentCount > 3 ? std::atoi(Arguments[3]) : 20;
     Segment = std::max(0, std::min(NodeCount - 2, Segment));
@@ -190,6 +229,8 @@ int main(int ArgumentCount, char **Arguments) {
     float DeltaTimeSeconds = float(double(Now - Last) / double(SDL_GetPerformanceFrequency()));
     Last = Now;
     GameState.Update(DeltaTimeSeconds, PlayerInput);
+    if (GameState.RandomRequested)
+      GameState.SetChallengeSeed(Random());
     Save();
     if (AudioDevice) {
       SDL_LockAudioDevice(AudioDevice);

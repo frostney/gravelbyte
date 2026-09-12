@@ -411,7 +411,9 @@ void Renderer::DrawDistantSnowTree(Vector3 Position, float Height, int Seed, boo
   DrawTriangle(SnowLeft, SnowRight, Tip, Snow ? MakeColor(14, 15, 15) : Leaves);
 }
 void Renderer::RasterizeTriangle(const Triangle &Face) {
-  const ShadowPolygon *Shadow = Face.Shadow ? &ShadowPolygons[Face.Shadow - 1] : nullptr;
+  const uint16_t GhostMask = Face.Shadow & 0xc000;
+  const uint16_t ShadowIndex = Face.Shadow & 0x3fff;
+  const ShadowPolygon *Shadow = ShadowIndex ? &ShadowPolygons[ShadowIndex - 1] : nullptr;
   const uint16_t ShadowColor = Shadow ? ShadeColor(Face.SurfaceColor, -4) : Face.SurfaceColor;
   // Walk the two edges incrementally: divisions happen once per edge, rather
   // than on every scanline. Screen x uses Q16; reciprocal depth uses Q8.
@@ -468,7 +470,9 @@ void Renderer::RasterizeTriangle(const Triangle &Face) {
       if (!Shadow || CoordinateY < Shadow->Top || CoordinateY > Shadow->Bottom) {
         for (int CoordinateX = Left; CoordinateX <= Right; ++CoordinateX, CoordinateZ += Step) {
           const int Offset = CoordinateY * FramebufferWidth + CoordinateX;
-          if ((CoordinateZ >> 8) >= DepthBuffer[Offset]) {
+          if ((CoordinateZ >> 8) >= DepthBuffer[Offset] &&
+              (!GhostMask || ((CoordinateX + CoordinateY * (GhostMask == 0x4000 ? 2 : 1)) &
+                              (GhostMask == 0x4000 ? 3 : 1)) == 0)) {
             DepthBuffer[Offset] = uint16_t(CoordinateZ >> 8);
             Pixels[Offset] = Face.SurfaceColor;
           }
@@ -493,7 +497,9 @@ void Renderer::RasterizeTriangle(const Triangle &Face) {
         }
         for (int CoordinateX = Left; CoordinateX <= Right; ++CoordinateX, CoordinateZ += Step) {
           const int Offset = CoordinateY * FramebufferWidth + CoordinateX;
-          if ((CoordinateZ >> 8) >= DepthBuffer[Offset]) {
+          if ((CoordinateZ >> 8) >= DepthBuffer[Offset] &&
+              (!GhostMask || ((CoordinateX + CoordinateY * (GhostMask == 0x4000 ? 2 : 1)) &
+                              (GhostMask == 0x4000 ? 3 : 1)) == 0)) {
             DepthBuffer[Offset] = uint16_t(CoordinateZ >> 8);
             Pixels[Offset] = (CoordinateX >= MaskLeft && CoordinateX <= MaskRight)
                                  ? ShadowColor
@@ -522,6 +528,7 @@ void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSeco
     RenderRoad(GameState, ViewYaw);
   if (GameState.CurrentMode != GameMode::TrackSelect)
     RenderCar(GameState);
+  RenderGhost(GameState);
   GeometryMicroseconds = ProfileTimeMicroseconds() - GeometryStart;
   const uint32_t RasterStart = ProfileTimeMicroseconds();
   for (int Index = 0; Index < FaceCount; ++Index)
@@ -547,9 +554,10 @@ float Renderer::PrepareCamera(const Game &GameState) {
   PitchCosineFixed = Tuning::ChasePitchCosine;
   if (Cinematic) {
     // Planned road-relative shots keep the camera clear of tunnel roofs/walls.
-    bool Portal = GameState.SelectedTrack == 2 &&
-                  GameState.Segment >= Tuning::TunnelStart - Tuning::PortalCameraMargin &&
-                  GameState.Segment <= Tuning::TunnelEnd + Tuning::PortalCameraMargin;
+    bool Portal =
+        GameState.SelectedTrack == 2 &&
+        GameState.Segment >= GameState.Features.TunnelStart - Tuning::PortalCameraMargin &&
+        GameState.Segment <= GameState.Features.TunnelEnd + Tuning::PortalCameraMargin;
     int Shot =
         Portal ? 0 : int(GameState.CinematicTime / Tuning::ShotSeconds) % Tuning::CameraShotCount;
     if (Shot == 1) {
@@ -646,7 +654,8 @@ void Renderer::RenderBackground(const Game &GameState, float ViewYaw) {
   }
 }
 void Renderer::RenderMountain(const Game &GameState, int First, int Last) {
-  if (GameState.SelectedTrack == 2 && Last >= Tuning::TunnelStart && First <= Tuning::TunnelEnd) {
+  if (GameState.SelectedTrack == 2 && Last >= GameState.Features.TunnelStart &&
+      First <= GameState.Features.TunnelEnd) {
     // Broad, cached rock/snow panels enclose the detailed tunnel interior.
     for (int SampleIndex = 0; SampleIndex < Tuning::MountainSections; ++SampleIndex) {
       const auto &CurrentRing = GameState.Mountain[SampleIndex],
@@ -661,7 +670,8 @@ void Renderer::RenderMountain(const Game &GameState, int First, int Last) {
                         MakeColor(7, 8, 10));
     }
     for (int SampleIndex : {0, Tuning::MountainSections}) {
-      int NodeIndex = SampleIndex == 0 ? Tuning::TunnelStart : Tuning::TunnelEnd;
+      int NodeIndex =
+          SampleIndex == 0 ? GameState.Features.TunnelStart : GameState.Features.TunnelEnd;
       const auto &Ring = GameState.Mountain[SampleIndex];
       for (int Sign : {-1, 1}) {
         Vector3 Bottom = GameState.Roadside(
@@ -710,9 +720,12 @@ void Renderer::RenderRoad(const Game &GameState, float ViewYaw) {
       const int Far = Side ? 9 : 0, Bank = Side ? 8 : 1, Verge = Side ? 7 : 2, Edge = Side ? 6 : 3;
       // Authored world positions are built once, avoiding repeated software
       // floating-point terrain sampling for every face on the RP2040.
-      const bool Water = GameState.Bridge(Index) || (GameState.Coast(Index) && Side == 1);
+      const bool Water = GameState.Bridge(Index) ||
+                         (GameState.Coast(Index) && (Side ? 1 : -1) == GameState.CoastSide());
       uint16_t Outer = Water ? MakeColor(3, 8, 11) : Grass;
-      uint16_t BankColor = GameState.Coast(Index) && Side == 1 ? MakeColor(14, 12, 8) : Grass;
+      uint16_t BankColor = GameState.Coast(Index) && (Side ? 1 : -1) == GameState.CoastSide()
+                               ? MakeColor(14, 12, 8)
+                               : Grass;
       DrawGroundTriangle(CurrentRing[Far], NextRing[Far], NextRing[Bank], ShadeColor(Outer, -1));
       DrawGroundTriangle(CurrentRing[Far], NextRing[Bank], CurrentRing[Bank], Outer);
       DrawGroundTriangle(CurrentRing[Bank], NextRing[Bank], NextRing[Verge],
@@ -873,21 +886,41 @@ void Renderer::RenderTrackObjects(const Game &GameState, int Index) {
 }
 void Renderer::RenderCar(const Game &GameState) {
   const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
-  const float CarSine = ShadowSine, CarCosine = ShadowCosine;
-  const float PitchSine = std::sin(Showroom ? 0 : GameState.Pitch),
-              PitchCosine = std::cos(Showroom ? 0 : GameState.Pitch),
-              RoadSine = std::sin(Showroom ? 0 : GameState.Roll),
-              RoadCosine = std::cos(Showroom ? 0 : GameState.Roll);
+  RenderVehicle(GameState.GetCarSpecification(), GameState.SelectedCar,
+                {GameState.CarPosition, Showroom ? GameState.MenuRotation : GameState.Yaw,
+                 Showroom ? 0 : GameState.Pitch, Showroom ? 0 : GameState.Roll});
+}
+void Renderer::RenderGhost(const Game &GameState) {
+  VehiclePose Pose;
+  if (!GameState.GhostPose(Pose))
+    return;
+  const auto Distance = Pose.Position - GameState.CarPosition;
+  const float Squared =
+      Distance.CoordinateX * Distance.CoordinateX + Distance.CoordinateZ * Distance.CoordinateZ;
+  if (Squared < 9.f || Squared > 10000.f)
+    return;
+  const int FirstFace = FaceCount;
+  RenderVehicle(GameState.GetCarSpecification(), GameState.SelectedCar, Pose, true);
+  for (int Index = FirstFace; Index < FaceCount; ++Index) {
+    Faces[Index].SurfaceColor = MakeColor(11, 14, 14);
+    Faces[Index].Shadow = Squared < 36.f ? 0x4000 : 0x8000;
+  }
+}
+void Renderer::RenderVehicle(const CarSpecification &Specification, int CarIndex,
+                             const VehiclePose &Pose, bool Simplified) {
+  const float CarSine = std::sin(Pose.Yaw), CarCosine = std::cos(Pose.Yaw);
+  const float PitchSine = std::sin(Pose.Pitch), PitchCosine = std::cos(Pose.Pitch),
+              RoadSine = std::sin(Pose.Roll), RoadCosine = std::cos(Pose.Roll);
   auto TransformCarPoint = [&](float CoordinateX, float CoordinateY, float CoordinateZ) {
-    CoordinateX *= GameState.GetCarSpecification().Width;
-    CoordinateY *= GameState.GetCarSpecification().Height;
-    CoordinateZ *= GameState.GetCarSpecification().Length;
+    CoordinateX *= Specification.Width;
+    CoordinateY *= Specification.Height;
+    CoordinateZ *= Specification.Length;
     float RelativeY = CoordinateY * RoadCosine + CoordinateX * RoadSine,
           RelativeX = CoordinateX * RoadCosine - CoordinateY * RoadSine;
     float PositionY = RelativeY * PitchCosine + CoordinateZ * PitchSine,
           PositionZ = CoordinateZ * PitchCosine - RelativeY * PitchSine;
-    return GameState.CarPosition + Vector3{RelativeX * CarCosine + PositionZ * CarSine, PositionY,
-                                           PositionZ * CarCosine - RelativeX * CarSine};
+    return Pose.Position + Vector3{RelativeX * CarCosine + PositionZ * CarSine, PositionY,
+                                   PositionZ * CarCosine - RelativeX * CarSine};
   };
   auto Panel = [&](Vector3 FirstVertex, Vector3 SecondVertex, Vector3 ThirdVertex,
                    Vector3 FourthVertex, uint16_t SurfaceColor) {
@@ -908,7 +941,7 @@ void Renderer::RenderCar(const Game &GameState) {
           TransformCarPoint(Position.CoordinateX + (Index & 1 ? 1 : -1) * Size.CoordinateX * .5f,
                             Position.CoordinateY + ((Index & 4) ? Size.CoordinateY : 0),
                             Position.CoordinateZ + (Index & 2 ? 1 : -1) * Size.CoordinateZ * .5f);
-    Vector3 Relative = Camera - GameState.CarPosition;
+    Vector3 Relative = Camera - Pose.Position;
     float CoordinateX = Relative.CoordinateX * CarCosine - Relative.CoordinateZ * CarSine,
           CoordinateZ = Relative.CoordinateX * CarSine + Relative.CoordinateZ * CarCosine;
     if (CoordinateZ < Position.CoordinateZ)
@@ -921,15 +954,36 @@ void Renderer::RenderCar(const Game &GameState) {
       DrawQuadrilateral(Vertex[1], Vertex[3], Vertex[7], Vertex[5], SurfaceColor);
     DrawQuadrilateral(Vertex[4], Vertex[5], Vertex[7], Vertex[6], ShadeColor(SurfaceColor, 1));
   };
+  if (Simplified) {
+    // At ghost distances the silhouette matters; stippling hides small trim.
+    // Keep the same body dimensions and pitched/rolled pose with fewer panels.
+    const uint16_t GhostColor = MakeColor(11, 14, 14);
+    DrawCarBox({0, .32f, 0}, {1.78f, .65f, 3.04f}, GhostColor);
+    Panel({-.62f, 1.55f, -.70f}, {.62f, 1.55f, -.70f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
+          GhostColor);
+    Panel({-.82f, .97f, -1.12f}, {.82f, .97f, -1.12f}, {.62f, 1.55f, -.70f}, {-.62f, 1.55f, -.70f},
+          GhostColor);
+    Panel({-.82f, .97f, .92f}, {.82f, .97f, .92f}, {.62f, 1.55f, .32f}, {-.62f, 1.55f, .32f},
+          GhostColor);
+    for (int Side : {-1, 1}) {
+      Panel({Side * .82f, .97f, -1.12f}, {Side * .82f, .97f, .92f}, {Side * .62f, 1.55f, .32f},
+            {Side * .62f, 1.55f, -.70f}, GhostColor);
+      for (float WheelDepth : {-1.02f, 1.02f})
+        Panel({Side * 1.01f, .1f, WheelDepth - .31f}, {Side * 1.01f, .1f, WheelDepth + .31f},
+              {Side * 1.01f, .64f, WheelDepth + .31f}, {Side * 1.01f, .64f, WheelDepth - .31f},
+              GhostColor);
+    }
+    return;
+  }
   for (float CoordinateX : {-.91f, .91f})
     for (float CoordinateZ : {-1.05f, 1.05f})
       DrawCarBox({CoordinateX, .1f, CoordinateZ}, {.32f, .58f, .72f}, MakeColor(2, 2, 2));
-  const uint16_t Blue = GameState.SelectedCar == 0   ? MakeColor(14, 5, 3)
-                        : GameState.SelectedCar == 1 ? MakeColor(2, 4, 12)
-                                                     : MakeColor(14, 13, 10);
-  const uint16_t Gold = GameState.SelectedCar == 0   ? MakeColor(15, 12, 8)
-                        : GameState.SelectedCar == 1 ? MakeColor(15, 13, 3)
-                                                     : MakeColor(12, 3, 3),
+  const uint16_t Blue = CarIndex == 0   ? MakeColor(14, 5, 3)
+                        : CarIndex == 1 ? MakeColor(2, 4, 12)
+                                        : MakeColor(14, 13, 10);
+  const uint16_t Gold = CarIndex == 0   ? MakeColor(15, 12, 8)
+                        : CarIndex == 1 ? MakeColor(15, 13, 3)
+                                        : MakeColor(12, 3, 3),
                  Glass = MakeColor(3, 5, 6);
   // A watertight painted shell: roof, glazing and stripes ARE the faces.
   // There is no underlying cabin box to fight their depth values.
@@ -972,7 +1026,7 @@ void Renderer::RenderCar(const Game &GameState) {
             {Cuts[SampleIndex + 1], .97f, TopDepth}, {Cuts[SampleIndex], .97f, TopDepth},
             SampleIndex == 1 ? Blue : (Sign < 0 ? MakeColor(14, 3, 2) : MakeColor(15, 15, 11)));
   }
-  if (GameState.SelectedCar != 0)
+  if (CarIndex != 0)
     DrawCarBox({0, 1.04f, -1.38f}, {1.86f, .12f, .32f}, ShadeColor(Blue, -1));
 }
 void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool Diagnostics) {
@@ -1015,7 +1069,13 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
       DrawCenteredText(23, Buffer, White, 2);
       DrawCenteredText(38, "GATE TARGET  BEST", Yellow);
       for (int Index = 0; Index < SectorCount; ++Index) {
-        if (GameState.PriorSplits[Index] > 0)
+        if (GameState.Challenge) {
+          if (GameState.PriorSplits[Index] > 0)
+            std::snprintf(Buffer, sizeof(Buffer), "%d -- %+.2f", Index + 1,
+                          GameState.Splits[Index] - GameState.PriorSplits[Index]);
+          else
+            std::snprintf(Buffer, sizeof(Buffer), "%d -- --", Index + 1);
+        } else if (GameState.PriorSplits[Index] > 0)
           std::snprintf(Buffer, sizeof(Buffer), "%d %+.2f %+.2f", Index + 1,
                         GameState.Splits[Index] - GameState.GetDefaultSplits()[Index],
                         GameState.Splits[Index] - GameState.PriorSplits[Index]);
@@ -1030,9 +1090,9 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
       DrawCenteredText(94, "SECONDS / CUMULATIVE", White);
     }
     static const char *Medals[] = {"STAGE COMPLETE", "BRONZE", "SILVER", "GOLD"};
-    const int Medal = GameState.MedalForTime(GameState.Elapsed);
+    const int Medal = (GameState.Practice ? 0 : GameState.MedalForTime(GameState.Elapsed));
     if (!GameState.ShowRecords)
-      DrawCenteredText(8, Medals[Medal],
+      DrawCenteredText(8, GameState.Practice ? "PRACTICE COMPLETE" : Medals[Medal],
                        Medal == 1   ? MakeColor(12, 8, 5)
                        : Medal == 2 ? MakeColor(12, 13, 14)
                                     : Yellow);
@@ -1075,33 +1135,65 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
           ((Color >> 8) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator,
           ((Color >> 4) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator);
     }
-    for (int TrackIndex = 0; TrackIndex < TrackCount; ++TrackIndex) {
-      const int Top = 3 + TrackIndex * 10;
-      DrawText(3, Top, TrackIndex == GameState.SelectedTrack ? ">" : " ", Yellow);
-      DrawText(10, Top, TrackNames[TrackIndex],
-               TrackIndex == GameState.SelectedTrack ? Yellow : White);
-      if (!GameState.Unlocked(TrackIndex))
+    if (GameState.SeedEditor) {
+      DrawCenteredText(14, "CHALLENGE SEED", Yellow);
+      std::snprintf(Buffer, sizeof(Buffer), "%08lX",
+                    static_cast<unsigned long>(GameState.EditingSeed));
+      for (int Digit = 0; Digit < 8; ++Digit) {
+        const char Character[] = {Buffer[Digit], 0};
+        DrawText(28 + Digit * 8, 49, Character, Digit == GameState.SeedDigit ? Yellow : White, 2);
+      }
+      DrawText(28 + GameState.SeedDigit * 8, 64, "^", Yellow, 2);
+      DrawCenteredText(83, "UP DOWN CHANGE", White);
+      DrawCenteredText(94, "LEFT RIGHT DIGIT", White);
+      std::snprintf(Buffer, sizeof(Buffer), "%s SET %s BACK", Confirm, Back);
+      DrawCenteredText(110, Buffer, White);
+      return;
+    }
+    for (int TrackIndex = 0; TrackIndex <= TrackCount; ++TrackIndex) {
+      const int Top = 3 + TrackIndex * 9;
+      DrawText(3, Top, TrackIndex == GameState.CourseChoice() ? ">" : " ", Yellow);
+      DrawText(10, Top, TrackIndex == TrackCount ? "CHALLENGE" : TrackNames[TrackIndex],
+               TrackIndex == GameState.CourseChoice() ? Yellow : White);
+      if (TrackIndex < TrackCount && !GameState.Unlocked(TrackIndex))
         DrawText(96, Top, "LOCK", MakeColor(8, 8, 8));
     }
+    if (GameState.Challenge)
+      std::snprintf(Buffer, sizeof(Buffer), "SEED %08lX",
+                    static_cast<unsigned long>(GameState.ChallengeSeed));
+    else {
+      static const char *Variants[] = {"ORIGINAL", "REVERSE", "MIRROR", "REV + MIRROR"};
+      std::snprintf(Buffer, sizeof(Buffer), "%s%s", GameState.VariantUnlocked() ? "<> " : "",
+                    Variants[GameState.SelectedVariant]);
+    }
+    DrawCenteredText(40, Buffer, Yellow);
     RenderTrackMap(GameState);
     std::snprintf(Buffer, sizeof(Buffer), "%.2f KM",
                   (GameState.SectorEnds.back() - 1) * GameState.SegmentLength / 1000.f);
-    DrawCenteredText(77, Buffer, White);
-    if (GameState.Unlocked(GameState.SelectedTrack)) {
+    DrawCenteredText(85, Buffer, White);
+    if (GameState.Challenge) {
+      DrawCenteredText(94, "SESSION BEST", White);
+      if (GameState.Best > 0)
+        TimeText(Buffer, sizeof(Buffer), GameState.Best);
+      else
+        std::snprintf(Buffer, sizeof(Buffer), "--:--.--");
+      DrawCenteredText(102, Buffer, Yellow);
+      std::snprintf(Buffer, sizeof(Buffer), "%s NEW <> SEED", AuxiliaryLabel);
+    } else if (GameState.Unlocked(GameState.SelectedTrack)) {
       static const char *Names[] = {"BRONZE", "SILVER", "GOLD"};
       const uint16_t Colors[] = {MakeColor(12, 8, 5), MakeColor(12, 13, 14), Yellow};
       for (int Tier = 1; Tier <= 3; ++Tier) {
-        char Time[20];
-        TimeText(Time, sizeof(Time), GameState.MedalTarget(Tier));
-        std::snprintf(Buffer, sizeof(Buffer), "%s %s", Names[Tier - 1], Time);
-        DrawCenteredText(85 + (Tier - 1) * 8, Buffer, Colors[Tier - 1]);
+        TimeText(Buffer, sizeof(Buffer), GameState.MedalTarget(Tier));
+        DrawText(3 + (Tier - 1) * 40, 94, Names[Tier - 1], Colors[Tier - 1]);
+        DrawText(3 + (Tier - 1) * 40, 103, Buffer, Colors[Tier - 1]);
       }
+      std::snprintf(Buffer, sizeof(Buffer), "%s RACE %s BACK", Confirm, Back);
     } else {
-      DrawCenteredText(88, "BRONZE TO UNLOCK", Yellow);
-      DrawCenteredText(98, TrackNames[GameState.SelectedTrack - 1], White);
+      DrawCenteredText(94, "BRONZE TO UNLOCK", Yellow);
+      DrawCenteredText(103, TrackNames[GameState.SelectedTrack - 1], White);
+      std::snprintf(Buffer, sizeof(Buffer), "%s BACK", Back);
     }
-    std::snprintf(Buffer, sizeof(Buffer), "%s RACE %s BACK", Confirm, Back);
-    DrawCenteredText(111, Buffer, White);
+    DrawCenteredText(113, Buffer, White);
     return;
   }
   DrawRectangle(2, 2, 36, 9, Dark);
@@ -1109,12 +1201,18 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
   DrawText(4, 4, Buffer, White);
   DrawRectangle(77, 2, 41, 17, Dark);
   DrawText(79, 4, "TO BEAT", Yellow);
-  TimeText(Buffer, sizeof(Buffer), GameState.ReferenceSplits.back());
+  if (GameState.Challenge && GameState.ReferenceSplits.back() <= 0)
+    std::snprintf(Buffer, sizeof(Buffer), "--:--.--");
+  else
+    TimeText(Buffer, sizeof(Buffer), GameState.ReferenceSplits.back());
   DrawText(79, 12, Buffer, White);
+  if (GameState.Practice)
+    DrawCenteredText(33, "PRACTICE", Yellow);
   DrawRectangle(2, 22, 4 * int(std::strlen(GameState.GetSectionName(GameState.Segment))) + 4, 9,
                 Dark);
   DrawText(4, 24, GameState.GetSectionName(GameState.Segment), White);
-  if (GameState.SplitMessage > 0 && GameState.CurrentMode == GameMode::Racing) {
+  if (GameState.SplitMessage > 0 && GameState.CurrentMode == GameMode::Racing &&
+      (!GameState.Challenge || GameState.PriorSplits.back() > 0)) {
     std::snprintf(Buffer, sizeof(Buffer), "%+.2fs", GameState.SplitDelta);
     DrawCenteredText(34, Buffer,
                      GameState.SplitDelta <= 0 ? MakeColor(6, 15, 7) : MakeColor(15, 6, 4));
@@ -1137,9 +1235,10 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
   DrawRectangle(3, 116, int(114 * GameState.Progress()), 2, Yellow);
   for (int Index = 0; Index < SectorCount; ++Index) {
     int CoordinateX = 3 + int(113.f * (GameState.SectorEnds[Index] - 1) / (NodeCount - 5));
-    const uint16_t CheckpointColor = GameState.Splits[Index] <= GameState.ReferenceSplits[Index]
-                                         ? MakeColor(6, 15, 7)
-                                         : MakeColor(15, 6, 4);
+    const uint16_t CheckpointColor =
+        GameState.Challenge && GameState.ReferenceSplits[Index] <= 0  ? White
+        : GameState.Splits[Index] <= GameState.ReferenceSplits[Index] ? MakeColor(6, 15, 7)
+                                                                      : MakeColor(15, 6, 4);
     DrawRectangle(CoordinateX - 1, 114, 3, 3,
                   Index < GameState.SplitCount ? CheckpointColor : White);
     if (Index >= GameState.SplitCount)
@@ -1215,14 +1314,23 @@ void Renderer::RenderTrackMap(const Game &GameState) {
     MinimumZ = std::min(MinimumZ, Position.CoordinateZ);
     MaximumZ = std::max(MaximumZ, Position.CoordinateZ);
   }
-  const float Scale = std::min(104.f / std::max(1.f, MaximumX - MinimumX),
-                               35.f / std::max(1.f, MaximumZ - MinimumZ));
-  const float OffsetX = 60.f - (MaximumX + MinimumX) * .5f * Scale;
-  const float OffsetY = 54.f + (MaximumZ + MinimumZ) * .5f * Scale;
+  // Fit the longer course axis across the wide preview, preserving its shape.
+  // Long sprint stages otherwise collapse into a thin vertical line.
+  const bool Rotate = MaximumZ - MinimumZ > MaximumX - MinimumX;
+  const float HorizontalMinimum = Rotate ? MinimumZ : MinimumX;
+  const float HorizontalMaximum = Rotate ? MaximumZ : MaximumX;
+  const float VerticalMinimum = Rotate ? MinimumX : MinimumZ;
+  const float VerticalMaximum = Rotate ? MaximumX : MaximumZ;
+  const float Scale = std::min(104.f / std::max(1.f, HorizontalMaximum - HorizontalMinimum),
+                               32.f / std::max(1.f, VerticalMaximum - VerticalMinimum));
+  const float OffsetX = 60.f - (HorizontalMaximum + HorizontalMinimum) * .5f * Scale;
+  const float OffsetY = 64.f + (VerticalMaximum + VerticalMinimum) * .5f * Scale;
   auto Map = [&](int Index) {
     const auto &Position = GameState.Road[Index].Position;
-    return std::array<int, 2>{int(std::lround(OffsetX + Position.CoordinateX * Scale)),
-                              int(std::lround(OffsetY - Position.CoordinateZ * Scale))};
+    const float Horizontal = Rotate ? Position.CoordinateZ : Position.CoordinateX;
+    const float Vertical = Rotate ? Position.CoordinateX : Position.CoordinateZ;
+    return std::array<int, 2>{int(std::lround(OffsetX + Horizontal * Scale)),
+                              int(std::lround(OffsetY - Vertical * Scale))};
   };
   for (int Index = 1; Index < GameState.SectorEnds.back(); ++Index) {
     const auto Start = Map(Index), End = Map(Index + 1);

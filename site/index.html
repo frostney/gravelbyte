@@ -49,6 +49,10 @@
               <button data-bit="1" aria-label="Steer left">◀</button
               ><button data-bit="2" aria-label="Steer right">▶</button>
               <button id="records" data-bit="256" hidden>Records</button>
+              <button id="variant-left" data-bit="2048" hidden aria-label="Previous variant">
+                ◀
+              </button>
+              <button id="variant-right" data-bit="4096" hidden aria-label="Next variant">▶</button>
             </div>
             <div class="pedals">
               <button data-bit="16" class="race-control">Drift</button
@@ -114,6 +118,8 @@
             <button id="menu-confirm">Confirm</button>
             <button id="menu-back">Back</button>
             <button id="menu-aux">Records</button>
+            <button id="menu-left">Previous variant</button>
+            <button id="menu-right">Next variant</button>
           </fieldset>
         </section>
         <section class="install" aria-label="PicoSystem download and setup">
@@ -129,7 +135,7 @@
           <p class="device-controls">
             <kbd aria-label="Directional pad">D-pad</kbd> steer / select · <kbd>A</kbd> gas /
             confirm · <kbd>B</kbd> brake / back · <kbd>X</kbd> drift / assist / records ·
-            <kbd>Y</kbd> pause. Sound and pace notes in Options.
+            <kbd>Y</kbd> pause. Sound, ghost and pace notes in Options.
           </p>
         </section>
       </aside>

@@ -381,3 +381,15 @@ kbd {
 :root:has(.no-script) #load-status {
   display: none;
 }
+
+#variant-left,
+#variant-right {
+  position: absolute;
+  bottom: 52px;
+}
+#variant-left {
+  left: 0;
+}
+#variant-right {
+  left: 50px;
+}

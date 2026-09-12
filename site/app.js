@@ -14,6 +14,8 @@ let keyboard = 0,
   pulses = 0,
   lastTime = 0,
   lastMode = -1,
+  lastMenuState = '',
+  lastSeedUrl = '',
   previousGamepadInputs = 0,
   saveFailed = false;
 let engineAudioContext, oscillator, gain;
@@ -247,6 +249,64 @@ function render() {
   }
   renderingContext.putImageData(framebufferImage, 0, 0);
 }
+let ghostDatabase;
+let loadedGhostGeneration = -1;
+function openGhostDatabase() {
+  if (!ghostDatabase)
+    ghostDatabase = new Promise((resolve, reject) => {
+      const request = indexedDB.open('gravelbyte-replays-v4', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('ghosts');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onblocked = () => reject(new Error('Replay database blocked'));
+    });
+  return ghostDatabase;
+}
+async function storeGhost(record, bytes) {
+  const database = await openGhostDatabase();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('ghosts', 'readwrite');
+    transaction.objectStore('ghosts').put(bytes, record);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+async function loadGhost(record, generation) {
+  const database = await openGhostDatabase();
+  const bytes = await new Promise((resolve, reject) => {
+    const request = database.transaction('ghosts').objectStore('ghosts').get(record);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  if (
+    gameEngine._GravelbyteGhostGeneration() !== generation ||
+    !(bytes instanceof Uint8Array) ||
+    bytes.length !== gameEngine._GravelbyteGhostBytes()
+  )
+    return;
+  gameEngine.HEAPU8.set(bytes, gameEngine._GravelbyteGhostBuffer());
+  gameEngine._GravelbyteImportGhost(generation);
+}
+function updateGhostStorage() {
+  const failure = () => {
+    findElement('save-status').textContent = 'Replay storage is unavailable. You can keep racing.';
+  };
+  if (gameEngine._GravelbyteGhostPending()) {
+    const record = gameEngine._GravelbyteRecordIndex();
+    const offset = gameEngine._GravelbyteExportGhost();
+    // Copy before awaiting IndexedDB: the live replay is reused on restart.
+    const bytes = gameEngine.HEAPU8.slice(offset, offset + gameEngine._GravelbyteGhostBytes());
+    gameEngine._GravelbyteGhostMarkSaved();
+    storeGhost(record, bytes).catch(failure);
+    loadedGhostGeneration = gameEngine._GravelbyteGhostGeneration();
+  }
+  const generation = gameEngine._GravelbyteGhostGeneration();
+  if (generation !== loadedGhostGeneration) {
+    loadedGhostGeneration = generation;
+    loadGhost(gameEngine._GravelbyteRecordIndex(), generation).catch(failure);
+  }
+}
 function save() {
   if (!gameEngine._GravelbyteSavePending()) return;
   try {
@@ -289,6 +349,11 @@ function tick(timestampMilliseconds) {
           touch: 3,
         }[activeInput],
       );
+      if (gameEngine._GravelbyteRandomRequested()) {
+        let seed = crypto.getRandomValues(new Uint32Array(1))[0];
+        if (seed === gameEngine._GravelbyteSeed() >>> 0) seed = (seed ^ 0x9e3779b9) >>> 0;
+        gameEngine._GravelbyteSetSeed(seed);
+      }
       pulses = 0;
     }
     const mode = gameEngine._GravelbyteMode();
@@ -297,7 +362,14 @@ function tick(timestampMilliseconds) {
     canvas.dataset.mode = String(mode);
     canvas.dataset.car = String(gameEngine._GravelbyteCar());
     canvas.dataset.track = String(gameEngine._GravelbyteTrack());
-    if (mode !== lastMode) {
+    const menuState = [
+      mode,
+      gameEngine._GravelbyteChallenge(),
+      gameEngine._GravelbyteSeedEditor(),
+      gameEngine._GravelbyteVariantsUnlocked(),
+    ].join(':');
+    if (menuState !== lastMenuState) {
+      lastMenuState = menuState;
       lastMode = mode;
       const race = mode === 3 || mode === 4;
       document
@@ -309,8 +381,22 @@ function tick(timestampMilliseconds) {
       document
         .querySelectorAll('.menu-control')
         .forEach((inputValue) => (inputValue.hidden = race));
-      findElement('records').hidden = mode !== 6 && mode !== 1;
-      findElement('records').textContent = mode === 1 ? 'Assist' : 'Records';
+      findElement('records').hidden =
+        mode !== 6 &&
+        mode !== 1 &&
+        !(mode === 2 && gameEngine._GravelbyteChallenge() && !gameEngine._GravelbyteSeedEditor());
+      findElement('records').textContent = mode === 1 ? 'Assist' : mode === 2 ? 'New' : 'Records';
+      const variants =
+        mode === 2 &&
+        (gameEngine._GravelbyteChallenge() || gameEngine._GravelbyteVariantsUnlocked());
+      findElement('variant-left').hidden = findElement('variant-right').hidden = !variants;
+      const variantLabel = gameEngine._GravelbyteSeedEditor()
+        ? 'digit'
+        : gameEngine._GravelbyteChallenge()
+          ? 'seed editor'
+          : 'variant';
+      findElement('variant-left').setAttribute('aria-label', `Previous ${variantLabel}`);
+      findElement('variant-right').setAttribute('aria-label', `Next ${variantLabel}`);
       for (const [bit, label] of [
         [1, mode === 2 || mode === 5 ? '▲' : '◀'],
         [2, mode === 2 || mode === 5 ? '▼' : '▶'],
@@ -354,12 +440,25 @@ function tick(timestampMilliseconds) {
         0.03,
       );
     }
+    const seedUrl = gameEngine._GravelbyteChallenge()
+      ? (gameEngine._GravelbyteSeed() >>> 0).toString(16).padStart(8, '0')
+      : '';
+    if (seedUrl !== lastSeedUrl) {
+      lastSeedUrl = seedUrl;
+      const url = new URL(location.href);
+      if (seedUrl) url.searchParams.set('seed', seedUrl);
+      else url.searchParams.delete('seed');
+      history.replaceState(null, '', url);
+    }
+    updateGhostStorage();
     save();
     render();
   }
   requestAnimationFrame(tick);
 }
 function navigationBit(bit) {
+  if (bit === 2048) return 1;
+  if (bit === 4096) return 2;
   return [2, 5].includes(lastMode) && bit === 1
     ? 512
     : [2, 5].includes(lastMode) && bit === 2
@@ -374,6 +473,8 @@ for (const [elementIdentifier, bit] of [
   ['menu-next', 2],
   ['menu-confirm', 32],
   ['menu-back', 128],
+  ['menu-left', 2048],
+  ['menu-right', 4096],
 ])
   findElement(elementIdentifier).addEventListener('click', () => menuInput(bit));
 function updateAccessibleMenu(mode) {
@@ -382,16 +483,30 @@ function updateAccessibleMenu(mode) {
   for (const elementIdentifier of ['menu-previous', 'menu-next'])
     findElement(elementIdentifier).hidden = !select;
   findElement('menu-previous').textContent =
-    mode === 1 ? 'Previous car' : mode === 2 ? 'Previous track' : 'Previous choice';
+    mode === 1
+      ? 'Previous car'
+      : mode === 2
+        ? gameEngine._GravelbyteSeedEditor()
+          ? 'Increase digit'
+          : 'Previous track'
+        : 'Previous choice';
   findElement('menu-next').textContent =
-    mode === 1 ? 'Next car' : mode === 2 ? 'Next track' : 'Next choice';
+    mode === 1
+      ? 'Next car'
+      : mode === 2
+        ? gameEngine._GravelbyteSeedEditor()
+          ? 'Decrease digit'
+          : 'Next track'
+        : 'Next choice';
   findElement('menu-confirm').textContent =
     mode === 0
       ? 'Choose car'
       : mode === 1
         ? 'Choose track'
         : mode === 2
-          ? 'Start race'
+          ? gameEngine._GravelbyteSeedEditor()
+            ? 'Set seed'
+            : 'Start race'
           : mode === 5
             ? 'Select option'
             : 'Retry';
@@ -399,15 +514,36 @@ function updateAccessibleMenu(mode) {
   findElement('menu-back').hidden = mode === 0;
   findElement('menu-back').textContent =
     mode === 1 ? 'Back to title' : mode === 6 ? 'Choose track' : mode === 5 ? 'Back' : 'Choose car';
-  findElement('menu-aux').hidden = mode !== 6 && mode !== 5 && mode !== 1;
+  findElement('menu-aux').hidden =
+    mode !== 6 &&
+    mode !== 5 &&
+    mode !== 1 &&
+    !(mode === 2 && gameEngine._GravelbyteChallenge() && !gameEngine._GravelbyteSeedEditor());
+  const variants =
+    mode === 2 && (gameEngine._GravelbyteChallenge() || gameEngine._GravelbyteVariantsUnlocked());
+  findElement('menu-left').hidden = findElement('menu-right').hidden = !variants;
+  const variantLabel = gameEngine._GravelbyteSeedEditor()
+    ? 'digit'
+    : gameEngine._GravelbyteChallenge()
+      ? 'seed editor'
+      : 'variant';
+  findElement('menu-left').textContent = `Previous ${variantLabel}`;
+  findElement('menu-right').textContent = `Next ${variantLabel}`;
   findElement('menu-aux').textContent =
-    mode === 5 ? 'Resume' : mode === 1 ? 'Toggle steering assist' : 'Toggle checkpoint records';
+    mode === 5
+      ? 'Resume'
+      : mode === 1
+        ? 'Toggle steering assist'
+        : mode === 2
+          ? 'New random stage'
+          : 'Toggle checkpoint records';
 }
 findElement('menu-aux').addEventListener('click', () => menuInput(lastMode === 5 ? 64 : 256));
 useInput(activeInput);
 try {
   const { default: createGravelbyte } = await import('./gravelbyte.js');
   gameEngine = await createGravelbyte();
+  gameEngine._GravelbyteInitialSeed(crypto.getRandomValues(new Uint32Array(1))[0]);
   const expected = document.querySelector('meta[name="gravelbyte-build"]').content;
   if (
     typeof gameEngine._GravelbyteBuildIdentifier !== 'function' ||
@@ -435,6 +571,14 @@ try {
   } catch {
     findElement('save-status').textContent =
       'Previous records could not be restored. A fresh session is ready.';
+  }
+  const sharedSeed = new URL(location.href).searchParams.get('seed');
+  if (sharedSeed !== null) {
+    if (/^(?:0x)?[0-9a-f]{8}$/i.test(sharedSeed))
+      gameEngine._GravelbyteSetSeed(Number.parseInt(sharedSeed.replace(/^0x/i, ''), 16));
+    else
+      findElement('save-status').textContent =
+        'Invalid seed: use eight hexadecimal digits. Random challenges remain available.';
   }
   render();
   findElement('play').disabled = false;

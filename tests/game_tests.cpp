@@ -126,8 +126,8 @@ int main() {
   Game Slower;
   LoadBest(Slower, EncodeBest(200.f, {40.f, 80.f, 120.f, 160.f, 200.f}));
   Slower.Restart();
-  Check(Slower.ReferenceSplits == Slower.GetDefaultSplits(),
-        "slower personal best does not replace built-in target");
+  Check(Slower.ReferenceSplits == Slower.BestSplits,
+        "personal best sets split comparison consistently with its ghost");
   SavedRecord = EncodeBest(92.345f, {18.f, 36.f, 54.f, 74.f, 92.345f});
   SavedRecord.Splits[0] ^= 1;
   Check(DecodeBest(SavedRecord) == 0, "corrupt split rejected");

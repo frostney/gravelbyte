@@ -1,5 +1,5 @@
 find_program(CLANG_FORMAT NAMES clang-format HINTS /opt/homebrew/opt/llvm/bin)
-file(GLOB OWNED_CPP CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp" "${PROJECT_SOURCE_DIR}/src/*.hpp" "${PROJECT_SOURCE_DIR}/tests/*.cpp")
+file(GLOB OWNED_CPP CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/src/*.cpp" "${PROJECT_SOURCE_DIR}/src/*.hpp" "${PROJECT_SOURCE_DIR}/tests/*.cpp" "${PROJECT_SOURCE_DIR}/tools/*.cpp")
 if(CLANG_FORMAT)
   execute_process(COMMAND ${CLANG_FORMAT} --version OUTPUT_VARIABLE FORMAT_VERSION)
   if(NOT FORMAT_VERSION MATCHES "version 23[.]1[.]0")

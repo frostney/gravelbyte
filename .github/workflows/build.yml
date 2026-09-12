@@ -30,7 +30,7 @@ jobs:
           cmake --build build --target format-check
           cmake --build build
           ctest --test-dir build --output-on-failure
-          clang-tidy -p build src/game.cpp src/stage.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp
+          clang-tidy -p build src/game.cpp src/stage.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp tools/*.cpp
       - name: Emscripten 4.0.23
         run: |
           git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"

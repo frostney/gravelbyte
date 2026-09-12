@@ -139,14 +139,19 @@ tests cannot establish device performance. See [validation](docs/validation.md)
 for measured results and [target calibration](docs/targets.md) for reference runs.
 
 `-DGRAVELBYTE_BENCHMARK=ON` builds an automated nine-race device diagnostic that
-never writes records. Diagnostics enable audio regardless of the saved mute preference
-and report that workload in each result. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
+never writes records or ghosts. It loads matching stored ghosts when present and
+reports the number of frames containing ghost geometry. Benchmarks enable audio
+regardless of the saved mute preference unless built with
+`GRAVELBYTE_TEST_SILENT=ON`; each result identifies its audio workload. `-DGRAVELBYTE_BENCHMARK_START=6` starts at the winter
 course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
 `-DGRAVELBYTE_SMOKE=ON` builds a separate real-save diagnostic: it toggles sound,
-changes car, starts a race, changes sound and pace-note options while paused,
-and resumes. It prints
-`SAVE_OK` after read-back verification and `SMOKE_DONE` after reaching racing.
+changes car, starts a race, changes sound, ghost and pace-note options while paused,
+and resumes. It completes a driven run, stores a new best replay if earned,
+and restarts to check that the ghost loads. It prints
+`SAVE_OK` after record verification, `SMOKE_DONE` after reaching racing,
+`GHOST_SAVE_OK` after replay verification, `GHOST_RELOAD` after restarting,
+and `GHOST_LOADED` when a saved replay is available after boot.
 Do not combine the two diagnostic options. Always restore the normal player.
 The board is explicitly `pimoroni_picosystem`: the generic Pico's 2MiB flash
 limit would assert when saving in the PicoSystem's final 16MiB flash sector.
@@ -154,7 +159,7 @@ limit would assert when saving in the PicoSystem's final 16MiB flash sector.
 Reusable simulation, camera, recording, landmark and layout values are grouped
 in `src/tuning.hpp`. Authored road bends, car profiles and targets remain data.
 Replays use a fixed 24KiB pose buffer; very long runs progressively reduce the
-sampling frequency instead of exhausting device memory. They are session-only.
+sampling frequency instead of exhausting device memory. Personal-best replays persist and can appear as ghosts; finish replays remain available during the session. See [replays and challenges](docs/replays-and-challenges.md).
 
 [Reference art](assets/reference/car-track-reference.png) and its exact
 [ImageGen prompt](assets/reference/car-track-prompt.md) are retained as design
@@ -190,3 +195,27 @@ require at least 30fps during normal racing. Telemetry separates rendering,
 SDK update time, buffer-swap time, elapsed display transfer and SDK wait percent.
 `flip_elapsed_us` is elapsed transfer time observed after update, not CPU work;
 `wait_percent` is busy-wait opportunity, not a battery-life measurement.
+
+## Route variants, practice and challenges
+
+Bronze on an original course unlocks its reverse, mirrored and reversed-mirrored
+routes. Left/right selects a variant in the track menu. Each car/route/assist
+combination has its own records and personal-best ghost. Pause > Options toggles
+sound, ghost and pace notes. Pause > Retry last split starts practice from the
+last checkpoint; practice cannot earn records or medals. Restart restores a full
+eligible run.
+
+Choose Challenge for a random stage. X/Space/New generates another; left/right
+opens the shared eight-digit seed editor. Use left/right to choose a digit and
+up/down to change it, then A/Enter/Go to confirm. The same seed works on handheld
+and web. Browser URLs carry the seed for sharing. Challenge bests are session
+only, with no campaign unlocks or medals.
+
+Use `-DGRAVELBYTE_TEST_SILENT=ON` for silent local PicoSystem/desktop testing,
+or `GRAVELBYTE_TEST_SILENT=1 npm run test:web` to mute browser test output.
+The track selector previews the selected scenery behind the checkpoint map.
+
+`-DGRAVELBYTE_BENCHMARK_EXTENDED=ON` selects six additional diagnostic runs:
+forest reverse, beach mirror, winter reverse + mirror, then challenge seeds
+00000000, 80000000 and ffffffff (all with Goshawk Turbo). Combine it with
+`GRAVELBYTE_BENCHMARK=ON`; the start index is 0–5 for this set.

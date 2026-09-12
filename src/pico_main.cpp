@@ -1,7 +1,9 @@
 #include "game.hpp"
+#include "ghost.hpp"
 #include "hardware/clocks.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
+#include "pico/rand.h"
 #include "pico/stdlib.h"
 #include "picosystem.hpp"
 #include "save_journal.hpp"
@@ -20,6 +22,9 @@ static uint32_t Frames = 0, SlowFrames = 0, MaximumFrameMicroseconds = 0,
 static uint64_t TotalFrame = 0;
 static bool Diagnostics = false;
 static GravelByte::GeometryTelemetry RaceGeometry;
+#ifdef GRAVELBYTE_BENCHMARK
+static uint32_t GhostRenderedFrames = 0;
+#endif
 [[maybe_unused]] static unsigned VerifiedSaves = 0;
 alignas(4) static uint16_t
     SecondFrame[GravelByte::FramebufferWidth * GravelByte::FramebufferHeight];
@@ -44,6 +49,71 @@ static void WriteSlot(int Target, const GravelByte::SaveSlot &Slot) {
   flash_range_erase(JournalOffset + Target * FLASH_SECTOR_SIZE, FLASH_SECTOR_SIZE);
   flash_range_program(JournalOffset + Target * FLASH_SECTOR_SIZE, SavePage, sizeof(SavePage));
   restore_interrupts(State);
+}
+static constexpr uint32_t GhostOffset = 12 * 1024 * 1024;
+static_assert(GhostOffset + GravelByte::RecordCount * 2 * GravelByte::GhostSlotBytes <=
+              JournalOffset);
+static const GravelByte::GhostHeader &GhostHeaderAt(int Slot) {
+  return *reinterpret_cast<const GravelByte::GhostHeader *>(
+      XIP_BASE + GhostOffset + (GameState.RecordIndex() * 2 + Slot) * GravelByte::GhostSlotBytes);
+}
+static const GravelByte::ReplayPose *GhostPosesAt(int Slot) {
+  return reinterpret_cast<const GravelByte::ReplayPose *>(
+      reinterpret_cast<const uint8_t *>(&GhostHeaderAt(Slot)) + GravelByte::GhostHeaderBytes);
+}
+static void RefreshGhost() {
+  static uint32_t Generation = UINT32_MAX;
+  if (Generation == GameState.GhostLoadGeneration)
+    return;
+  Generation = GameState.GhostLoadGeneration;
+  for (int Slot = 0; Slot < 2; ++Slot) {
+    const auto &Header = GhostHeaderAt(Slot);
+    if (!GravelByte::ValidGhost(Header, GhostPosesAt(Slot), GameState))
+      continue;
+    GameState.GhostPoses = GhostPosesAt(Slot);
+    GameState.GhostCount = Header.Count;
+    GameState.GhostInterval = Header.Interval;
+    GameState.GhostDuration = Header.Duration;
+    break;
+  }
+}
+[[maybe_unused]] static void PersistGhost() {
+  if (!GameState.GhostSaveRequested)
+    return;
+  GameState.GhostSaveRequested = false;
+  const auto Header = GravelByte::MakeGhostHeader(GameState);
+  if (Header.Count < 2)
+    return;
+  const int Target = GravelByte::ValidGhost(GhostHeaderAt(0), GhostPosesAt(0),
+                                            GameState.RecordIndex(), GameState.PriorSplits)
+                         ? 1
+                         : 0;
+  const uint32_t Offset =
+      GhostOffset + (GameState.RecordIndex() * 2 + Target) * GravelByte::GhostSlotBytes;
+  GameState.ClearGhost();
+  uint32_t Interrupts = save_and_disable_interrupts();
+  flash_range_erase(Offset, GravelByte::GhostSlotBytes);
+  restore_interrupts(Interrupts);
+  const int Bytes = GravelByte::GhostHeaderBytes + Header.Count * sizeof(GravelByte::ReplayPose);
+  for (int Page = GravelByte::GhostHeaderBytes; Page < Bytes; Page += FLASH_PAGE_SIZE) {
+    GravelByte::GhostPage(GameState, Header, Page, SavePage, FLASH_PAGE_SIZE);
+    Interrupts = save_and_disable_interrupts();
+    flash_range_program(Offset + Page, SavePage, FLASH_PAGE_SIZE);
+    restore_interrupts(Interrupts);
+  }
+  // Publish the checked header last; an interrupted payload has no valid header.
+  GravelByte::GhostPage(GameState, Header, 0, SavePage, FLASH_PAGE_SIZE);
+  Interrupts = save_and_disable_interrupts();
+  flash_range_program(Offset, SavePage, FLASH_PAGE_SIZE);
+  restore_interrupts(Interrupts);
+  if (!GravelByte::ValidGhost(GhostHeaderAt(Target), GhostPosesAt(Target), GameState))
+    std::printf("GHOST_SAVE_FAILED: personal best retained without replay\n");
+#ifdef GRAVELBYTE_SMOKE
+  else
+    std::printf("GHOST_SAVE_OK record=%d slot=%d count=%lu\n", GameState.RecordIndex(), Target,
+                (unsigned long)Header.Count);
+#endif
+  LastUpdateMicroseconds = picosystem::time_us();
 }
 [[maybe_unused]] static void PersistBest() {
   static uint32_t RetryAt = 0;
@@ -73,8 +143,34 @@ static void WriteSlot(int Target, const GravelByte::SaveSlot &Slot) {
     std::printf("SAVE_FAILED: previous record retained\n");
   }
 }
+#ifdef GRAVELBYTE_BENCHMARK
+static int BenchmarkIndex = GRAVELBYTE_BENCHMARK_START;
+#ifdef GRAVELBYTE_BENCHMARK_EXTENDED
+static constexpr int BenchmarkCount = 6;
+#else
+static constexpr int BenchmarkCount = 9;
+#endif
+static void BeginBenchmark() {
+#ifdef GRAVELBYTE_BENCHMARK_EXTENDED
+  GameState.SteeringAssist = false;
+  if (BenchmarkIndex < 3) {
+    GameState.Challenge = false;
+    GameState.SelectCarAndTrack(2, BenchmarkIndex);
+    GameState.SelectVariant(BenchmarkIndex + 1);
+  } else {
+    static constexpr uint32_t Seeds[] = {0u, 0x80000000u, 0xffffffffu};
+    GameState.SelectedCar = 2;
+    GameState.SetChallengeSeed(Seeds[BenchmarkIndex - 3]);
+  }
+#else
+  GameState.SelectCarAndTrack(BenchmarkIndex % 3, BenchmarkIndex / 3);
+#endif
+  GameState.CurrentMode = GravelByte::GameMode::Countdown;
+}
+#endif
 void init() {
   stdio_init_all();
+  GameState.ChallengeSeed = get_rand_32();
   const int Current = GravelByte::NewestSlot(SaveSlot(0), SaveSlot(1));
   if (Current >= 0) {
     GravelByte::LoadSave(GameState, SaveSlot(Current).Data);
@@ -87,8 +183,7 @@ void init() {
 #else
   GameState.Muted = false;
 #endif
-  GameState.SelectCarAndTrack(GRAVELBYTE_BENCHMARK_START % 3, GRAVELBYTE_BENCHMARK_START / 3);
-  GameState.CurrentMode = GravelByte::GameMode::Countdown;
+  BeginBenchmark();
 #endif
   LastUpdateMicroseconds = picosystem::time_us();
 }
@@ -124,51 +219,75 @@ void update(uint32_t) {
   static int PreviousPhase = -1;
   const int Phase = int((Now - SmokeStart) / 1000000);
   PlayerInput =
-      Phase >= 19 ? GravelByte::CalculateDrivingInput(GameState) : GravelByte::DrivingInput{};
+      Phase >= 22 ? GravelByte::CalculateDrivingInput(GameState) : GravelByte::DrivingInput{};
   if (Phase != PreviousPhase) {
     PlayerInput.Auxiliary = Phase == 2 || Phase == 3;
-    PlayerInput.Action =
-        Phase == 4 || Phase == 5 || Phase == 6 || Phase == 13 || Phase == 14 || Phase == 16;
-    PlayerInput.Down = Phase == 11 || Phase == 12 || Phase == 15;
-    PlayerInput.Back = Phase == 17;
+    PlayerInput.Action = Phase == 4 || Phase == 5 || Phase == 6 || Phase == 14 || Phase == 15 ||
+                         Phase == 17 || Phase == 19;
+    PlayerInput.Down = Phase == 11 || Phase == 12 || Phase == 13 || Phase == 16 || Phase == 18;
+    PlayerInput.Back = Phase == 20;
     PlayerInput.Right = Phase == 5;
-    PlayerInput.Pause = Phase == 10 || Phase == 18;
-    if (Phase == 24)
+    PlayerInput.Pause = Phase == 10 || Phase == 21;
+    if (Phase == 26)
       std::printf("SMOKE_DONE mode=%d saves=%u racing=%d\n", int(GameState.CurrentMode),
                   VerifiedSaves, GameState.CurrentMode == GravelByte::GameMode::Racing);
     PreviousPhase = Phase;
   }
+  static uint32_t SmokeFinished = 0;
+  static bool SmokeRestarted = false;
+  if (GameState.CurrentMode == GravelByte::GameMode::Finished && !SmokeRestarted) {
+    if (!SmokeFinished)
+      SmokeFinished = Now;
+    if (Now - SmokeFinished > 2000000) {
+      PlayerInput.Action = true;
+      SmokeRestarted = true;
+    }
+  }
+  if (SmokeRestarted && GameState.CurrentMode == GravelByte::GameMode::Countdown) {
+    static bool Announced = false;
+    if (!Announced) {
+      std::printf("GHOST_RELOAD count=%d record=%d best_ms=%lu\n", GameState.GhostCount,
+                  GameState.RecordIndex(), (unsigned long)(GameState.Best * 1000));
+      Announced = true;
+    }
+  }
+
 #endif
   GameState.Update(DeltaTimeSeconds, PlayerInput);
+  if (GameState.RandomRequested)
+    GameState.SetChallengeSeed(get_rand_32());
 #ifdef GRAVELBYTE_BENCHMARK
   static bool Reported = false;
   static uint32_t FinishedAt = 0;
   if (GameState.CurrentMode == GravelByte::GameMode::Finished && !Reported) {
-    std::printf("BENCHMARK_DONE track=%d car=%d frames=%lu mean_us=%lu max_us=%lu below30=%lu "
-                "recoveries=%d time_ms=%lu dropped=%lu overflow_frames=%lu rendered_frames=%lu "
-                "audio=%d\n",
-                GameState.SelectedTrack, GameState.SelectedCar, (unsigned long)Frames,
-                (unsigned long)(Frames ? TotalFrame / Frames : 0),
-                (unsigned long)MaximumFrameMicroseconds, (unsigned long)SlowFrames,
-                GameState.Recoveries, (unsigned long)(GameState.Elapsed * 1000),
-                (unsigned long)RaceGeometry.Dropped, (unsigned long)RaceGeometry.OverflowFrames,
-                (unsigned long)RaceGeometry.Frames, !GameState.Muted);
+    std::printf(
+        "BENCHMARK_DONE track=%d car=%d frames=%lu mean_us=%lu max_us=%lu below30=%lu "
+        "recoveries=%d time_ms=%lu dropped=%lu overflow_frames=%lu rendered_frames=%lu "
+        "audio=%d ghost_frames=%lu variant=%d challenge=%d seed=%lu\n",
+        GameState.SelectedTrack, GameState.SelectedCar, (unsigned long)Frames,
+        (unsigned long)(Frames ? TotalFrame / Frames : 0), (unsigned long)MaximumFrameMicroseconds,
+        (unsigned long)SlowFrames, GameState.Recoveries, (unsigned long)(GameState.Elapsed * 1000),
+        (unsigned long)RaceGeometry.Dropped, (unsigned long)RaceGeometry.OverflowFrames,
+        (unsigned long)RaceGeometry.Frames, !GameState.Muted, (unsigned long)GhostRenderedFrames,
+        GameState.SelectedVariant, GameState.Challenge, (unsigned long)GameState.ChallengeSeed);
     Reported = true;
     FinishedAt = Now;
   }
-  if (Reported && Now - FinishedAt > 2000000 &&
-      GameState.SelectedTrack * 3 + GameState.SelectedCar < 8) {
-    int Next = GameState.SelectedTrack * 3 + GameState.SelectedCar + 1;
-    GameState.SelectCarAndTrack(Next % 3, Next / 3);
+  if (Reported && Now - FinishedAt > 2000000 && BenchmarkIndex + 1 < BenchmarkCount) {
+    ++BenchmarkIndex;
+    BeginBenchmark();
     Frames = SlowFrames = MaximumFrameMicroseconds = MaximumDrawMicroseconds = 0;
     TotalFrame = 0;
     RaceGeometry = {};
+    GhostRenderedFrames = 0;
     Reported = false;
     LastUpdateMicroseconds = picosystem::time_us();
   }
 #endif
 
+  RefreshGhost();
 #ifndef GRAVELBYTE_BENCHMARK
+  PersistGhost();
   const unsigned SavesBefore = VerifiedSaves;
   PersistBest();
   if (VerifiedSaves != SavesBefore)
@@ -221,6 +340,11 @@ void update(uint32_t) {
   if (Now - LastReport >= GravelByte::Tuning::Telemetry::ReportIntervalMicroseconds &&
       stdio_usb_connected()) {
     LastReport = Now;
+#ifdef GRAVELBYTE_SMOKE
+    if (GameState.CurrentMode != GravelByte::GameMode::Racing && GameState.GhostCount > 1)
+      std::printf("GHOST_LOADED record=%d count=%d best_ms=%lu\n", GameState.RecordIndex(),
+                  GameState.GhostCount, (unsigned long)(GameState.Best * 1000));
+#endif
     std::printf(
         "gravelbyte mode=%d segment=%d frames=%lu mean_us=%lu max_us=%lu max_draw_us=%lu "
         "below30=%lu tris=%d dropped=%d geometry_us=%lu raster_us=%lu tick_us=%lu "
@@ -247,6 +371,14 @@ static void RenderBackFrame() {
   const uint32_t Started = picosystem::time_us();
   auto *Pixels = BackFrame;
   SceneRenderer.Render(GameState, Pixels, int(picosystem::stats.fps), Diagnostics);
+#ifdef GRAVELBYTE_BENCHMARK
+  if (GameState.CurrentMode == GravelByte::GameMode::Racing)
+    for (int Index = 0; Index < SceneRenderer.FaceCount; ++Index)
+      if (SceneRenderer.Faces[Index].Shadow & 0xc000) {
+        ++GhostRenderedFrames;
+        break;
+      }
+#endif
   if (GameState.CurrentMode == GravelByte::GameMode::Racing)
     RaceGeometry.Observe(SceneRenderer.Dropped);
   // Our shared image is RGBA4444. PicoSystem's SPI-friendly packed order is

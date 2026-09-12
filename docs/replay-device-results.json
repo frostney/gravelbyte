@@ -1,0 +1,380 @@
+{
+  "date": "2026-09-12",
+  "device": "PicoSystem E46024C7430C442A",
+  "clock_hz": 250000000,
+  "audio_workload": "silent; no audio-enabled performance claim for this revision",
+  "toolchain": "Arm GNU 15.3.Rel1, GCC15.3.1 20260627",
+  "picosystem_revision": "9a26b2adbebaf4cbf0cb646fa542304202996cb4",
+  "pico_sdk_revision": "a1438dff1d38bd9c65dbd693f0e5db4b9ae91779",
+  "base_revision": "2813138e6b72c054558d35c23149a47e3248f075",
+  "shared_core_source_sha256": {
+    "src/game.cpp": "c8e0f1adddce7566449cfa577be17abed51eec18f9b6a21138c70e2a0e8ecac2",
+    "src/game.hpp": "736a4499d6c2f865095cec481e312265e0fb33069ff667758a8e4707a719d1dc",
+    "src/render.cpp": "e2c0968ea434f33085c19df6b36729bd8c9f1d2fd95d866eccc5bf3b205b5fd5",
+    "src/stage.cpp": "e3e7af331788f8630ae57f24b23a40862ebcd056ed92b65d0930fda5f9b21d19",
+    "src/stage.hpp": "17f5113c3cfedf3bf0d0cfded860e350732ec8d562a4028347905a9645c8424b",
+    "src/ghost.hpp": "11729fa452d1650fbcf5d1e40ba8192b910f1bd7171e7f807d6b80f9905bfa5b",
+    "src/tuning.hpp": "b5d00a8f6e8ef326fcc4f1958cc4e3af486d3347dc0503dd6d96472813085ab9",
+    "src/test_driver.hpp": "f251cb1ef6db5dc67c2edd84a718b496fdef37a8f2cd7c568da50be438770e53"
+  },
+  "source_scope": "The measured shared gameplay and rendering sources are identical across both benchmark artifacts and the validation player. The extended/smoke harness adds case identity and reboot diagnostics after the nine-race artifact.",
+  "current_platform_source_sha256": {
+    "src/pico_main.cpp": "fe8ba450bf2b3891deaa5e2849d399fc5f2f54e047c3e2e29b7126e9b3454c3f",
+    "src/web_main.cpp": "a42f111dc94317f89233c51a51afe8af539d2712ac7a85928546e7842a7cfa38",
+    "src/desktop_main.cpp": "2dd24ae645f125bf9fc1f3f990116ac522f5995fb7e538375eac7d5e18e1ee4a"
+  },
+  "firmware_sha256": {
+    "ghost-lod-measurement.uf2": "f956de1b245307287caed2336a1727a72e563eb0da7f900fcc1bb375d70d4116",
+    "extended-measurement.uf2": "dd4e13b701377c3611aaf0a5c612e74a5a74c4dcd46ad5cf2f98d72f2ee6e4bd",
+    "smoke-measurement.uf2": "a04d0de713c90c0c1ead9426bdab03189f750319e9175391aa0bfcd414574c93"
+  },
+  "normal_validation_player_sha256": "20fcf1da05f400e5ac674c5c2a501131826566795c7261c28325c119bd4f46f1",
+  "normal_player_static_bytes": 237816,
+  "full_preflash_backup_sha256": "1d71e6410046a75d55d741dabbda87dfcfb3afdf2b4831aa08bac2f9b72079f2",
+  "full_backup_verified": true,
+  "ghost_workload": {
+    "frames": 35576,
+    "weighted_fps": 39.47504015325388,
+    "maximum_frame_us": 25347,
+    "ghost_frames": 35565,
+    "audio": false,
+    "runs": [
+      {
+        "track": 0,
+        "car": 0,
+        "frames": 3929,
+        "mean_us": 25331,
+        "max_us": 25345,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 99541,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 3929,
+        "audio": 0,
+        "ghost_frames": 3926
+      },
+      {
+        "track": 0,
+        "car": 1,
+        "frames": 4099,
+        "mean_us": 25331,
+        "max_us": 25344,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 103847,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 4099,
+        "audio": 0,
+        "ghost_frames": 4099
+      },
+      {
+        "track": 0,
+        "car": 2,
+        "frames": 3975,
+        "mean_us": 25331,
+        "max_us": 25343,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 100708,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 3975,
+        "audio": 0,
+        "ghost_frames": 3975
+      },
+      {
+        "track": 1,
+        "car": 0,
+        "frames": 2681,
+        "mean_us": 25332,
+        "max_us": 25343,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 67926,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 2681,
+        "audio": 0,
+        "ghost_frames": 2681
+      },
+      {
+        "track": 1,
+        "car": 1,
+        "frames": 2762,
+        "mean_us": 25332,
+        "max_us": 25344,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 69978,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 2762,
+        "audio": 0,
+        "ghost_frames": 2760
+      },
+      {
+        "track": 1,
+        "car": 2,
+        "frames": 2671,
+        "mean_us": 25333,
+        "max_us": 25347,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 67673,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 2671,
+        "audio": 0,
+        "ghost_frames": 2669
+      },
+      {
+        "track": 2,
+        "car": 0,
+        "frames": 5103,
+        "mean_us": 25332,
+        "max_us": 25345,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 129291,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 5103,
+        "audio": 0,
+        "ghost_frames": 5102
+      },
+      {
+        "track": 2,
+        "car": 1,
+        "frames": 5259,
+        "mean_us": 25334,
+        "max_us": 25347,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 133250,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 5259,
+        "audio": 0,
+        "ghost_frames": 5258
+      },
+      {
+        "track": 2,
+        "car": 2,
+        "frames": 5097,
+        "mean_us": 25335,
+        "max_us": 25346,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 129150,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 5097,
+        "audio": 0,
+        "ghost_frames": 5095
+      }
+    ]
+  },
+  "ghost_fixture_scope": "Synthetic saved poses moved two road nodes ahead; real geometry visibility counted per frame. Not player records.",
+  "representative_variant_challenges": {
+    "frames": 21124,
+    "weighted_fps": 39.47518994496573,
+    "maximum_frame_us": 25350,
+    "audio": false,
+    "runs": [
+      {
+        "track": 0,
+        "car": 2,
+        "frames": 4015,
+        "mean_us": 25337,
+        "max_us": 25349,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 101745,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 4015,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 1,
+        "challenge": 0,
+        "seed": 1
+      },
+      {
+        "track": 1,
+        "car": 2,
+        "frames": 2671,
+        "mean_us": 25332,
+        "max_us": 25345,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 67672,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 2671,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 2,
+        "challenge": 0,
+        "seed": 1
+      },
+      {
+        "track": 2,
+        "car": 2,
+        "frames": 5192,
+        "mean_us": 25332,
+        "max_us": 25350,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 131543,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 5192,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 3,
+        "challenge": 0,
+        "seed": 1
+      },
+      {
+        "track": 1,
+        "car": 2,
+        "frames": 3081,
+        "mean_us": 25330,
+        "max_us": 25342,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 78054,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 3081,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 0,
+        "challenge": 1,
+        "seed": 0
+      },
+      {
+        "track": 0,
+        "car": 2,
+        "frames": 3085,
+        "mean_us": 25332,
+        "max_us": 25347,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 78161,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 3085,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 0,
+        "challenge": 1,
+        "seed": 2147483648
+      },
+      {
+        "track": 2,
+        "car": 2,
+        "frames": 3080,
+        "mean_us": 25330,
+        "max_us": 25342,
+        "below30": 0,
+        "recoveries": 0,
+        "time_ms": 78029,
+        "dropped": 0,
+        "overflow_frames": 0,
+        "rendered_frames": 3080,
+        "audio": 0,
+        "ghost_frames": 0,
+        "variant": 0,
+        "challenge": 1,
+        "seed": 4294967295
+      }
+    ]
+  },
+  "storage_and_restore": {
+    "ghost_write": true,
+    "ingame_restart": true,
+    "firmware_reboot": true,
+    "original_reserved_flash_restored": true,
+    "muted_preference_restored": true,
+    "normal_player_sha256": "20fcf1da05f400e5ac674c5c2a501131826566795c7261c28325c119bd4f46f1",
+    "reserved_sha256": "4886231aa25ffae3afd244e157f6790411e474f7450333a1552f92be7f61a308",
+    "readback_validation": "valid_slot=1 selected_record=4 muted=1 best_ms=102596\nvalid_ghost record=4 slot=0 count=514 milliseconds=102596 checksum=b81b4966\n",
+    "smoke_reload": [
+      [
+        "514",
+        "4",
+        "102595"
+      ]
+    ],
+    "boot_load": [
+      [
+        "4",
+        "514",
+        "102596"
+      ],
+      [
+        "4",
+        "514",
+        "102596"
+      ],
+      [
+        "4",
+        "514",
+        "102596"
+      ]
+    ]
+  },
+  "host_validation": {
+    "native_suites": 10,
+    "sanitizer_suites": 10,
+    "sanitizer_seconds": 205.86,
+    "chromium_suites": 26,
+    "variant_car_assist_drives": 72,
+    "seeded_drives": 768,
+    "landmark_views": 240,
+    "parity_nodes": 2107,
+    "parity_seeds": 7,
+    "maximum_parity_error_metres": 0.000306
+  },
+  "rejected_full_model_ghost": {
+    "track": 0,
+    "car": 0,
+    "below30": 28,
+    "maximum_frame_us": 50692,
+    "resolution": "Simplified only the ghost mesh; all nine combinations remeasured."
+  },
+  "raw_logs": {
+    "ghost-device-races.log": {
+      "local_path": "output/preview/ghost-device-races.log",
+      "sha256": "d9839d71a949518c2f33e897bb4dc498d6257a5aefb3a88b58abfbc7d2027a50"
+    },
+    "extended-device-races.log": {
+      "local_path": "output/preview/extended-device-races.log",
+      "sha256": "9244c90cee5c8415e5dbd1651854bee9e2e1152e0d096da8d6658687ece0c3fc"
+    },
+    "ghost-save-device.log": {
+      "local_path": "output/preview/ghost-save-device.log",
+      "sha256": "3d1bb459d46da5a871ffdfd9521e0d6323e570b0ca71d336967d2c1e656da2ae"
+    },
+    "ghost-reboot-device.log": {
+      "local_path": "output/preview/ghost-reboot-device.log",
+      "sha256": "73ffb06c71e78082185aab923ae1422e6b00821e57e6b9af9296a6b5ba048281"
+    },
+    "normal-player-restored.log": {
+      "local_path": "output/preview/normal-player-restored.log",
+      "sha256": "b2317ea438a62c256655c9639d329989f07564061674a04305f367b656e6b2a4"
+    },
+    "ghost-device-full-model.log": {
+      "local_path": "output/preview/ghost-device-full-model.log",
+      "sha256": "61629191bab6c82a46b4626fbe878d22a269701e53f5fe1b2a84ebe55b21a63b"
+    }
+  },
+  "limits": [
+    "Representative variant/seed hardware runs complement the wider native corpus, not every possible seed.",
+    "No physical electrical power-cut testing; byte-by-byte publication interruption is modeled on host.",
+    "Automated drives do not establish human difficulty calibration."
+  ]
+}

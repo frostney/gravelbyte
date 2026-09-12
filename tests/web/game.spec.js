@@ -29,6 +29,8 @@ test('keyboard menus, pause, records selections and reload', async ({ page: page
   await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '2');
   await press(page, 'ArrowDown');
+  await expect(page.locator('#game-status')).toContainText('Random challenge');
+  await press(page, 'ArrowDown');
   await expect(game).toHaveAttribute('data-track', '0');
   await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '3');
@@ -185,6 +187,7 @@ test('gamepad activation and storage denied fallback', async ({ page: page }) =>
   await button(13);
   await button(13);
   await button(13);
+  await button(13);
   await expect(page.locator('#game-status')).toContainText('COURSES');
   await button(0);
   await expect(game).toHaveAttribute('data-mode', '2');
@@ -299,7 +302,7 @@ test('accessible menus announce choices, refuse locked stages and start an unloc
   });
   await choose.focus();
   await choose.press('Enter');
-  await expect(page.locator('#game-status')).toContainText('BRACKEN RIDGE. Unlocked');
+  await expect(page.locator('#game-status')).toContainText('BRACKEN RIDGE, Original. Unlocked');
   const nextTrack = page.getByRole('button', {
     name: 'Next track',
     exact: true,
@@ -442,8 +445,10 @@ test('assist and pace notes are accessible and survive reload', async ({ page })
   const next = page.getByRole('button', { name: 'Next choice', exact: true });
   await activate(next);
   await activate(next);
+  await activate(next);
   await expect(page.locator('#game-status')).toContainText('OPTIONS');
   await activate(page.getByRole('button', { name: 'Select option', exact: true }));
+  await activate(next);
   await activate(next);
   await expect(page.locator('#game-status')).toContainText('PACE NOTES ON');
   await activate(page.getByRole('button', { name: 'Select option', exact: true }));
@@ -457,7 +462,292 @@ test('assist and pace notes are accessible and survive reload', async ({ page })
   await press(page, 'p');
   await press(page, 'ArrowDown');
   await press(page, 'ArrowDown');
+  await press(page, 'ArrowDown');
   await press(page, 'Enter');
   await press(page, 'ArrowDown');
+  await press(page, 'ArrowDown');
   await expect(page.locator('#game-status')).toContainText('PACE NOTES OFF');
+});
+
+test('shared challenge seed can be edited, randomized and reused after car changes', async ({
+  page,
+}) => {
+  await page.goto('/?seed=00000000');
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await expect(page.locator('#game-status')).toContainText('Seed 00000000');
+  await press(page, 'ArrowRight');
+  await expect(page.locator('#game-status')).toContainText('Edit seed 00000000. Digit 1');
+  await press(page, 'ArrowUp');
+  await expect(page.locator('#game-status')).toContainText('Edit seed 10000000');
+  await press(page, 'Enter');
+  await expect(page).toHaveURL(/seed=10000000/);
+  await press(page, 'Escape');
+  await press(page, 'ArrowRight');
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Seed 10000000');
+  await press(page, 'Space');
+  await expect(page).not.toHaveURL(/seed=10000000/);
+  const sharedUrl = page.url();
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  expect(page.url()).toBe(sharedUrl);
+  await expect(page.locator('#game-status')).toContainText('Random challenge');
+  await press(page, 'Enter');
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '3');
+});
+test('invalid seed and unavailable replay database leave racing playable', async ({ page }) => {
+  await page.addInitScript(() => {
+    indexedDB.open = () => {
+      throw new Error('Storage denied');
+    };
+  });
+  await page.goto('/?seed=not-a-seed');
+  await expect(page.locator('#save-status')).toContainText('Invalid seed');
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '3');
+  await expect(page.locator('#save-status')).toContainText('Replay storage is unavailable');
+});
+test('practice restart is explicitly marked and full restart restores eligibility', async ({
+  page,
+}) => {
+  await play(page);
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await press(page, 'p');
+  await press(page, 'ArrowDown');
+  await expect(page.locator('#game-status')).toContainText('RETRY LAST SPLIT');
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Practice. No records or medals.');
+  await press(page, 'p');
+  await press(page, 'ArrowDown');
+  await press(page, 'ArrowDown');
+  await expect(page.locator('#game-status')).toContainText('RESTART');
+  await press(page, 'Enter');
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '3');
+  await expect(page.locator('#game-status')).not.toContainText('Practice');
+});
+
+test('persisted personal-best ghost reloads and rejects a corrupt replacement', async ({
+  page,
+}) => {
+  const { readFileSync } = await import('node:fs');
+  const saveBytes = [...readFileSync('tests/fixtures/best-records-v4.bin')];
+  const ghostBytes = [...readFileSync('tests/fixtures/best-ghost-v1.bin')];
+  await page.goto('/');
+  await page.evaluate(
+    async ({ saveBytes, ghostBytes }) => {
+      localStorage.setItem('gravelbyte.records.v4', JSON.stringify(saveBytes));
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.open('gravelbyte-replays-v4', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('ghosts');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction('ghosts', 'readwrite');
+          transaction.objectStore('ghosts').put(new Uint8Array(ghostBytes), 0);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      });
+    },
+    { saveBytes, ghostBytes },
+  );
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Personal best ghost available');
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Personal best ghost available');
+  await page.evaluate(async () => {
+    await new Promise((resolve, reject) => {
+      const request = indexedDB.open('gravelbyte-replays-v4', 1);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('ghosts', 'readwrite');
+        const store = transaction.objectStore('ghosts');
+        const stored = store.get(0);
+        stored.onsuccess = () => {
+          const bytes = stored.result;
+          bytes[300] ^= 1;
+          store.put(bytes, 0);
+        };
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Personal best ghost unavailable');
+  await press(page, 'Enter');
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '4', { timeout: 6000 });
+});
+
+for (const seed of ['80000000', 'ffffffff']) {
+  test(`unsigned seed ${seed} survives URL and reload`, async ({ page }) => {
+    await page.goto(`/?seed=${seed}`);
+    await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+    await expect(page.locator('#game-status')).toContainText(`Seed ${seed.toUpperCase()}`);
+    await expect(page).toHaveURL(new RegExp(`seed=${seed}$`));
+    await page.reload();
+    await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+    await expect(page.locator('#game-status')).toContainText(`Seed ${seed.toUpperCase()}`);
+  });
+}
+
+test('touch challenge seed editor fits and uses shared controls', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto('/?seed=00000000');
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).tap();
+  await page.locator('#variant-right').tap();
+  await expect(page.locator('#game-status')).toContainText('Edit seed');
+  await page.locator('#touch [data-bit="1"]').tap();
+  await expect(page.locator('#game-status')).toContainText('Edit seed 10000000');
+  for (const selector of ['#variant-left', '#variant-right', '#touch [data-bit="32"]']) {
+    const bounds = await page.locator(selector).boundingBox();
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+  }
+  await page.locator('#touch [data-bit="32"]').tap();
+  await expect(page).toHaveURL(/seed=10000000/);
+  await page.locator('#touch [data-bit="32"]').tap();
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '4', { timeout: 6000 });
+  await context.close();
+});
+
+test('a complete driven best saves its ghost through the browser and reloads it', async ({
+  page,
+}) => {
+  test.setTimeout(90000);
+  const { readFileSync } = await import('node:fs');
+  const inputs = [...readFileSync('tests/fixtures/finch-driving-inputs.bin')];
+  // Control animation time and send public keyboard events; no game-state edits.
+  await page.addInitScript(() => {
+    let queuedFrames = [];
+    let timestamp = 1000;
+    let previousButtons = 0;
+    window.requestAnimationFrame = (callback) => {
+      queuedFrames.push(callback);
+      return queuedFrames.length;
+    };
+    window.gravelbyteAdvanceFrame = (buttons = 0, command = '') => {
+      const canvas = document.querySelector('#game');
+      for (const [bit, code] of [
+        [1, 'ArrowLeft'],
+        [2, 'ArrowRight'],
+        [4, 'ArrowUp'],
+        [8, 'ArrowDown'],
+      ]) {
+        if ((buttons & bit) !== (previousButtons & bit))
+          canvas.dispatchEvent(
+            new KeyboardEvent(buttons & bit ? 'keydown' : 'keyup', {
+              code,
+              key: code,
+              bubbles: true,
+            }),
+          );
+      }
+      previousButtons = buttons;
+      if (command)
+        canvas.dispatchEvent(
+          new KeyboardEvent('keydown', { code: command, key: command, bubbles: true }),
+        );
+      const callbacks = queuedFrames;
+      queuedFrames = [];
+      timestamp += 20;
+      for (const callback of callbacks) callback(timestamp);
+      if (command)
+        canvas.dispatchEvent(
+          new KeyboardEvent('keyup', { code: command, key: command, bubbles: true }),
+        );
+    };
+  });
+  await play(page);
+  const advance = async (command = '') =>
+    page.evaluate((command) => window.gravelbyteAdvanceFrame(0, command), command);
+  await advance();
+  await advance('Enter');
+  await advance('ArrowLeft');
+  await advance();
+  await advance('Enter');
+  await advance();
+  await advance('Enter');
+  await page.evaluate(() => {
+    for (
+      let frame = 0;
+      frame < 200 && document.querySelector('#game').dataset.mode === '3';
+      frame++
+    )
+      window.gravelbyteAdvanceFrame();
+  });
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '4');
+  for (let offset = 0; offset < inputs.length; offset += 200)
+    await page.evaluate(
+      (chunk) => {
+        for (const buttons of chunk) window.gravelbyteAdvanceFrame(buttons);
+      },
+      inputs.slice(offset, offset + 200),
+    );
+  await page.evaluate(() => {
+    for (
+      let frame = 0;
+      frame < 100 && document.querySelector('#game').dataset.mode === '4';
+      frame++
+    )
+      window.gravelbyteAdvanceFrame(4);
+  });
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '6');
+  await expect(page.locator('#game-status')).toContainText('Target beaten');
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open('gravelbyte-replays-v4', 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const database = request.result;
+            const stored = database.transaction('ghosts').objectStore('ghosts').get(0);
+            stored.onsuccess = () => {
+              database.close();
+              resolve(stored.result instanceof Uint8Array ? stored.result.length : 0);
+            };
+            stored.onerror = () => reject(stored.error);
+          };
+        });
+      }),
+    )
+    .toBe(12556);
+  await page.reload();
+  await page.getByRole('button', { name: 'Play Gravelbyte', exact: true }).click();
+  await advance();
+  await advance('Enter');
+  await advance();
+  await advance('Enter');
+  await expect
+    .poll(async () => {
+      await advance();
+      return page.locator('#game-status').textContent();
+    })
+    .toContain('Personal best ghost available');
 });

@@ -1,4 +1,5 @@
 #include "game.hpp"
+#include "ghost.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -9,9 +10,36 @@ static Game GameState;
 static Renderer SceneRenderer;
 static std::array<uint16_t, FramebufferWidth * FramebufferHeight> Pixels;
 static SaveData Transfer;
+static GhostTransfer GhostBuffer;
 static unsigned Previous = 0;
 static char StatusText[1024];
 extern "C" {
+EMSCRIPTEN_KEEPALIVE int GravelbyteRandomRequested() { return GameState.RandomRequested; }
+EMSCRIPTEN_KEEPALIVE void GravelbyteInitialSeed(uint32_t Seed) { GameState.ChallengeSeed = Seed; }
+EMSCRIPTEN_KEEPALIVE void GravelbyteSetSeed(uint32_t Seed) { GameState.SetChallengeSeed(Seed); }
+EMSCRIPTEN_KEEPALIVE uint32_t GravelbyteSeed() { return GameState.ChallengeSeed; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteChallenge() { return GameState.Challenge; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteSeedEditor() { return GameState.SeedEditor; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteVariantsUnlocked() { return GameState.VariantUnlocked(); }
+EMSCRIPTEN_KEEPALIVE int GravelbyteGhostPending() { return GameState.GhostSaveRequested; }
+EMSCRIPTEN_KEEPALIVE void GravelbyteGhostMarkSaved() { GameState.GhostSaveRequested = false; }
+EMSCRIPTEN_KEEPALIVE unsigned GravelbyteGhostGeneration() { return GameState.GhostLoadGeneration; }
+EMSCRIPTEN_KEEPALIVE int GravelbyteRecordIndex() { return GameState.RecordIndex(); }
+EMSCRIPTEN_KEEPALIVE int GravelbyteGhostBytes() { return sizeof(GhostBuffer); }
+EMSCRIPTEN_KEEPALIVE GhostTransfer *GravelbyteGhostBuffer() {
+  GameState.GhostPoses = nullptr;
+  GameState.GhostCount = 0;
+  return &GhostBuffer;
+}
+EMSCRIPTEN_KEEPALIVE GhostTransfer *GravelbyteExportGhost() {
+  GameState.ClearGhost();
+  FillGhostTransfer(GameState, GhostBuffer);
+  AttachGhost(GameState, GhostBuffer);
+  return &GhostBuffer;
+}
+EMSCRIPTEN_KEEPALIVE int GravelbyteImportGhost(unsigned Generation) {
+  return Generation == GameState.GhostLoadGeneration && AttachGhost(GameState, GhostBuffer);
+}
 EMSCRIPTEN_KEEPALIVE const char *GravelbyteBuildIdentifier() { return GRAVELBYTE_BUILD_ID; }
 EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
   switch (GameState.CurrentMode) {
@@ -31,12 +59,32 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
                   GameState.SteeringAssist ? "on" : "off");
     break;
   case GameMode::TrackSelect:
+    if (GameState.Challenge) {
+      if (GameState.SeedEditor)
+        std::snprintf(StatusText, sizeof(StatusText),
+                      "Edit seed %08lX. Digit %d selected. Left and right choose digit; up and "
+                      "down change it. Confirm sets seed; back cancels.",
+                      static_cast<unsigned long>(GameState.EditingSeed), GameState.SeedDigit + 1);
+      else
+        std::snprintf(StatusText, sizeof(StatusText),
+                      "Random challenge. Seed %08lX. Session best %.2f seconds. Confirm to race; "
+                      "the New random stage button generates "
+                      "another stage; left or right edits the seed. No medals or campaign unlocks.",
+                      static_cast<unsigned long>(GameState.ChallengeSeed), GameState.Best);
+      break;
+    }
     if (GameState.Unlocked(GameState.SelectedTrack))
       std::snprintf(StatusText, sizeof(StatusText),
-                    "Choose track: %s. Unlocked. Target %.2f seconds. Personal best %.2f seconds. "
+                    "Choose track: %s, %s. Unlocked. Bronze %.2f seconds, silver %.2f, gold %.2f. "
+                    "Personal best %.2f seconds. Personal best ghost %s. Left and right choose "
+                    "variant when unlocked. "
                     "Confirm to race; back to cars.",
-                    TrackNames[GameState.SelectedTrack], GameState.GetDefaultSplits().back(),
-                    GameState.Best);
+                    TrackNames[GameState.SelectedTrack],
+                    std::array<const char *, 4>{"Original", "Reverse", "Mirror",
+                                                "Reverse mirror"}[GameState.SelectedVariant],
+                    GameState.GetDefaultSplits().back(), GameState.MedalTarget(2),
+                    GameState.MedalTarget(3), GameState.Best,
+                    GameState.GhostCount > 1 ? "available" : "unavailable");
     else
       std::snprintf(StatusText, sizeof(StatusText),
                     "Choose track: %s. Locked. Beat %s to unlock. Up and down browse tracks; "
@@ -44,10 +92,12 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
                     TrackNames[GameState.SelectedTrack], TrackNames[GameState.SelectedTrack - 1]);
     break;
   case GameMode::Countdown:
-    std::snprintf(StatusText, sizeof(StatusText), "Get ready. Racing starts after the countdown.");
+    std::snprintf(StatusText, sizeof(StatusText), "%sGet ready. Racing starts after the countdown.",
+                  GameState.Practice ? "Practice. No records or medals. " : "");
     break;
   case GameMode::Racing:
-    std::snprintf(StatusText, sizeof(StatusText), "Racing. Checkpoint %d of 5. P pauses.",
+    std::snprintf(StatusText, sizeof(StatusText), "%sRacing. Checkpoint %d of 5. P pauses.",
+                  GameState.Practice ? "Practice. No records or medals. " : "",
                   std::min(5, GameState.SplitCount + 1));
     break;
   case GameMode::Paused:
@@ -56,12 +106,26 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
                   GameState.OptionsOpen ? "Options" : "Paused", GameState.MenuChoice());
     break;
   case GameMode::Finished:
+    if (GameState.Practice) {
+      std::snprintf(StatusText, sizeof(StatusText),
+                    "Practice complete. No records or medals awarded. Confirm restarts a full "
+                    "eligible run; back chooses course.");
+      break;
+    }
+    if (GameState.Challenge) {
+      std::snprintf(StatusText, sizeof(StatusText),
+                    "Challenge complete. Seed %08lX. Time %.2f seconds; session best %.2f. Confirm "
+                    "retries; back chooses course.",
+                    static_cast<unsigned long>(GameState.ChallengeSeed), GameState.Elapsed,
+                    GameState.Best);
+      break;
+    }
     std::snprintf(StatusText, sizeof(StatusText),
                   "Stage complete. Time %.2f seconds; target %.2f seconds. %s. Confirm retries; "
                   "back chooses a track.",
                   GameState.Elapsed, GameState.GetDefaultSplits().back(),
-                  GameState.Elapsed < GameState.GetDefaultSplits().back() ? "Target beaten"
-                                                                          : "Target not beaten");
+                  GameState.Elapsed <= GameState.GetDefaultSplits().back() ? "Target beaten"
+                                                                           : "Target not beaten");
     if (GameState.ShowRecords) {
       std::size_t Used = std::strlen(StatusText);
       for (int Index = 0; Index < SectorCount && Used < sizeof(StatusText); ++Index)
@@ -74,7 +138,7 @@ EMSCRIPTEN_KEEPALIVE const char *GravelbyteStatus() {
   return StatusText;
 }
 EMSCRIPTEN_KEEPALIVE int GravelbyteTrackUnlocked() {
-  return GameState.Unlocked(GameState.SelectedTrack);
+  return GameState.Challenge || GameState.Unlocked(GameState.SelectedTrack);
 }
 
 EMSCRIPTEN_KEEPALIVE const uint16_t *GravelbyteFrame() {
