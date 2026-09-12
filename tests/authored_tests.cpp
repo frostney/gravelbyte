@@ -126,8 +126,10 @@ int main() {
   Press(GameState, Pause);
   Press(GameState, Down);
   Press(GameState, Down);
+  Press(GameState, Down);
   Press(GameState, Confirm);
   Check(GameState.OptionsOpen, "pause menu opens options");
+  Press(GameState, Down);
   Press(GameState, Down);
   const bool PreviousNotes = GameState.PaceNotes;
   Press(GameState, Confirm);

@@ -61,6 +61,8 @@ float Game::MedalTarget(int Medal) const {
          MedalMargins[SelectedCar][std::clamp(Medal - 1, 0, 2)];
 }
 int Game::MedalForTime(float Seconds) const {
+  if (Challenge || Practice)
+    return 0;
   if (Seconds <= 0)
     return 0;
   for (int Medal = 3; Medal >= 1; --Medal)
@@ -73,10 +75,79 @@ Game::Game() {
   Restart();
   CurrentMode = GameMode::Title;
 }
+StageLayout Game::BaseLayout() const {
+  return Challenge ? RandomStageLayout(GeneratedStage) : GetStageLayout(SelectedTrack);
+}
+void Game::SetChallengeSeed(uint32_t Seed) {
+  if (Seed != ChallengeSeed)
+    ChallengeRecords = {};
+  ChallengeSeed = Seed;
+  GenerateRandomStage(Seed, GeneratedStage);
+  SelectedTrack = GeneratedStage.Biome;
+  SelectedVariant = 0;
+  Challenge = true;
+  SeedEditor = false;
+  RandomRequested = false;
+  BuildTrack();
+  SelectCarAndTrack(SelectedCar, SelectedTrack);
+  CurrentMode = GameMode::TrackSelect;
+  SaveRequested = true;
+}
+void Game::ChooseCourse(int Choice) {
+  if (Choice == TrackCount)
+    SetChallengeSeed(ChallengeSeed);
+  else {
+    Challenge = false;
+    SelectedTrack = std::clamp(Choice, 0, TrackCount - 1);
+    SelectedVariant = 0;
+    BuildTrack();
+    SelectCarAndTrack(SelectedCar, SelectedTrack);
+    CurrentMode = GameMode::TrackSelect;
+  }
+}
+StageLayout Game::Layout() const {
+  auto Result = BaseLayout();
+  if (SelectedVariant) {
+    Result.Corners = VariantCorners.data();
+    if (SelectedVariant & 1) {
+      const auto ReverseRange = [](int &Start, int &End) {
+        if (Start < 0)
+          return;
+        const int Earlier = Start;
+        Start = 298 - End;
+        End = 298 - Earlier;
+      };
+      ReverseRange(Result.BridgeStart, Result.BridgeEnd);
+      ReverseRange(Result.TunnelStart, Result.TunnelEnd);
+      ReverseRange(Result.SurfaceStart, Result.SurfaceEnd);
+      if (Result.Crest >= 0)
+        Result.Crest = 298 - Result.Crest;
+      for (int Index = 0; Index < SectorCount - 1; ++Index)
+        Result.Checkpoints[Index] = 298 - BaseLayout().Checkpoints[SectorCount - 2 - Index];
+    }
+  }
+  return Result;
+}
+bool Game::VariantUnlocked() const {
+  if (Challenge)
+    return false;
+  for (int Car = 0; Car < CarCount; ++Car)
+    for (bool Assisted : {false, true}) {
+      const float Time = Records[RecordIndex(SelectedTrack, Car, 0, Assisted)].Splits.back();
+      if (Time > 0 && Time <= Targets[SelectedTrack * CarCount + Car].back())
+        return true;
+    }
+  return false;
+}
+void Game::SelectVariant(int Variant) {
+  SelectedVariant = std::clamp(Variant, 0, VariantCount - 1);
+  BuildTrack();
+  SelectCarAndTrack(SelectedCar, SelectedTrack);
+}
 void Game::BuildTrack() {
   Road = {};
 
-  const auto &Layout = GetStageLayout(SelectedTrack);
+  const auto Layout = BaseLayout();
   SegmentLength = Layout.SegmentLength;
   SectorEnds = Layout.Checkpoints;
   float Heading = 0;
@@ -98,6 +169,54 @@ void Game::BuildTrack() {
         2.5f + 2.f * std::sin(Distance * .019f) + (GetSectionIndex(Index) == 2 ? 5.f : 0.f);
     Node.VergeRight = 1.f + 2.5f * std::sin(Distance * .013f + 1.f);
   }
+  const bool Reverse = SelectedVariant & 1, Mirror = SelectedVariant & 2;
+  if (Reverse) {
+    std::reverse(Road.begin(), Road.begin() + 299);
+    for (int Index = 299; Index < NodeCount; ++Index) {
+      Road[Index] = Road[Index - 1];
+      Road[Index].Position =
+          Road[Index - 1].Position + (Road[Index - 1].Position - Road[Index - 2].Position);
+    }
+  }
+  for (auto &Node : Road) {
+    if (Mirror)
+      Node.Position.CoordinateX = -Node.Position.CoordinateX;
+    if (Reverse != Mirror) {
+      Node.Bank = -Node.Bank;
+      std::swap(Node.VergeLeft, Node.VergeRight);
+    }
+  }
+  if (SelectedVariant) {
+    for (int Index = 0; Index < NodeCount; ++Index) {
+      auto &Node = Road[Index];
+      const auto Direction = Index + 1 < NodeCount ? Road[Index + 1].Position - Node.Position
+                                                   : Node.Position - Road[Index - 1].Position;
+      Node.Heading = std::atan2(Direction.CoordinateX, Direction.CoordinateZ);
+      Node.Right = {std::cos(Node.Heading), 0, -std::sin(Node.Heading)};
+      Node.Turn = StageCurvature(Layout, float(Reverse ? 298 - Index : Index)) *
+                  (Reverse != Mirror ? -1.f : 1.f);
+    }
+  }
+  for (std::size_t Index = 0; Index < Layout.CornerCount; ++Index) {
+    auto Corner = Layout.Corners[Reverse ? Layout.CornerCount - 1 - Index : Index];
+    if (Reverse) {
+      const int Start = Corner.Start;
+      Corner.Start = 298 - Corner.End;
+      Corner.End = 298 - Start;
+      std::swap(Corner.Entry, Corner.Exit);
+    }
+    if (Reverse != Mirror) {
+      Corner.Entry = -Corner.Entry;
+      Corner.Apex = -Corner.Apex;
+      Corner.Exit = -Corner.Exit;
+    }
+    VariantCorners[Index] = Corner;
+  }
+  const auto ActiveLayout = this->Layout();
+  SectorEnds = ActiveLayout.Checkpoints;
+  Features = {ActiveLayout.BridgeStart, ActiveLayout.BridgeEnd, ActiveLayout.TunnelStart,
+              ActiveLayout.TunnelEnd,   ActiveLayout.Crest,     ActiveLayout.SurfaceStart,
+              ActiveLayout.SurfaceEnd};
   // Limit each hillside to its own corridor. Long offset strips otherwise
   // fold across hairpins and can put a distant mountain through the near road.
   // The bounds lie inside the nearest-road Voronoi bisectors with a margin.
@@ -139,9 +258,9 @@ void Game::BuildTrack() {
   if (SelectedTrack == 2)
     for (int SampleIndex = 0; SampleIndex <= Tuning::MountainSections; ++SampleIndex) {
       float Fraction = float(SampleIndex) / Tuning::MountainSections;
-      int NodeIndex = Tuning::TunnelStart + SampleIndex *
-                                                (Tuning::TunnelEnd - Tuning::TunnelStart) /
-                                                Tuning::MountainSections;
+      int NodeIndex = Features.TunnelStart + SampleIndex *
+                                                 (Features.TunnelEnd - Features.TunnelStart) /
+                                                 Tuning::MountainSections;
       auto &Ring = Mountain[SampleIndex];
       Ring[2] = Road[NodeIndex].Position +
                 Vector3{0, Tuning::MountainPeak - 12.f * std::abs(Fraction * 2.f - 1.f), 0};
@@ -153,6 +272,9 @@ void Game::BuildTrack() {
 }
 void Game::Restart() {
   ShowDriftHint = !DriftHintSeen;
+  Practice = false;
+  GhostSaveRequested = false;
+  ReplayOriginTime = 0;
   Segment = 1;
   Furthest = 1;
   CarPosition = Road[1].Position;
@@ -184,19 +306,45 @@ void Game::Restart() {
   PreviousBest = ReferenceSplits.back();
   CurrentMode = GameMode::Countdown;
   RecordPose();
+  CaptureSplit();
+}
+void Game::CaptureSplit() {
+  static_cast<VehicleState &>(LastSplit) = static_cast<const VehicleState &>(*this);
+  LastSplit.Elapsed = Elapsed;
+  LastSplit.SplitCount = SplitCount;
+  LastSplit.Splits = Splits;
+}
+void Game::RetrySplit() {
+  static_cast<VehicleState &>(*this) = static_cast<const VehicleState &>(LastSplit);
+  Elapsed = LastSplit.Elapsed;
+  SplitCount = LastSplit.SplitCount;
+  Splits = LastSplit.Splits;
+  Practice = true;
+  NewRecord = false;
+  ReplayOriginTime = Elapsed;
+  ReplayCount = 0;
+  RecordClock = ReplayDuration = ReplayTime = 0;
+  ReplayInterval = Tuning::ReplayInterval;
+  NextSample = ReplayInterval;
+  Countdown = Tuning::CountdownSeconds;
+  CurrentMode = GameMode::Countdown;
+  RecordPose();
 }
 bool Game::Bridge(int NodeIndex) const {
-  return SelectedTrack == 0 && NodeIndex >= Tuning::BridgeStart && NodeIndex < Tuning::BridgeEnd;
+  return Features.BridgeStart >= 0 && NodeIndex >= Features.BridgeStart &&
+         NodeIndex < Features.BridgeEnd;
 }
 bool Game::Tunnel(int NodeIndex) const {
-  return SelectedTrack == 2 && NodeIndex >= Tuning::TunnelStart && NodeIndex < Tuning::TunnelEnd;
+  return Features.TunnelStart >= 0 && NodeIndex >= Features.TunnelStart &&
+         NodeIndex < Features.TunnelEnd;
 }
 bool Game::Coast(int NodeIndex) const {
+  NodeIndex = SourceNode(NodeIndex);
   return SelectedTrack == 1 && NodeIndex >= Tuning::CoastStart && NodeIndex <= Tuning::CoastEnd;
 }
 bool Game::HasScenery(int NodeIndex, int Sign) const {
   return !Bridge(NodeIndex) && !Bridge(NodeIndex - 1) && !Tunnel(NodeIndex) &&
-         !(Coast(NodeIndex) && Sign > 0);
+         !(Coast(NodeIndex) && Sign == CoastSide());
 }
 bool Game::Unlocked(int Track) const {
   for (int Previous = 0; Previous < Track; ++Previous) {
@@ -241,40 +389,63 @@ void Game::RecordPose(bool Final) {
   ReplayDuration = RecordClock;
   NextSample = ReplayCount * ReplayInterval;
 }
-void Game::ReplayTick(float DeltaTimeSeconds) {
-  if (ReplayCount < 2 || ReplayDuration <= 0)
-    return;
-  ReplayTime = std::fmod(ReplayTime + DeltaTimeSeconds, ReplayDuration);
-  int Index = std::min(ReplayCount - 2, int(ReplayTime / ReplayInterval));
-  float Start = Index * ReplayInterval;
-  float End = Index == ReplayCount - 2 ? ReplayDuration : Start + ReplayInterval;
-  float Fraction = Clamp((ReplayTime - Start) / std::max(.001f, End - Start), 0, 1);
-  const auto &EarlierPose = Replay[Index], &LaterPose = Replay[Index + 1];
+VehiclePose Game::SampleReplay(const ReplayPose *Poses, int Count, float Interval, float Duration,
+                               float Time) const {
+  if (!Poses || Count < 2 || Interval <= 0 || Duration <= 0)
+    return {};
+  Time = Clamp(Time, 0, Duration);
+  int Index = std::min(Count - 2, int(Time / Interval));
+  float Start = Index * Interval;
+  float End = Index == Count - 2 ? Duration : Start + Interval;
+  float Fraction = Clamp((Time - Start) / std::max(.001f, End - Start), 0, 1);
+  const auto &EarlierPose = Poses[Index], &LaterPose = Poses[Index + 1];
   auto Position = [&](const ReplayPose &Position) {
     return Road[Position.NodeIndex].Position + Vector3{Position.CoordinateX / Tuning::PoseScale,
                                                        Position.CoordinateY / Tuning::PoseScale,
                                                        Position.CoordinateZ / Tuning::PoseScale};
   };
   Vector3 FirstPoint = Position(EarlierPose), SecondPoint = Position(LaterPose);
-  CarPosition = FirstPoint + (SecondPoint - FirstPoint) * Fraction;
-  Yaw = EarlierPose.Yaw / Tuning::AngleScale +
-        AngleDelta(LaterPose.Yaw / Tuning::AngleScale, EarlierPose.Yaw / Tuning::AngleScale) *
-            Fraction;
-  Pitch = (EarlierPose.Pitch * (1 - Fraction) + LaterPose.Pitch * Fraction) * .01f;
-  Roll = (EarlierPose.Roll * (1 - Fraction) + LaterPose.Roll * Fraction) * .01f;
-  Segment = EarlierPose.NodeIndex;
+  VehiclePose Result;
+  Result.Position = FirstPoint + (SecondPoint - FirstPoint) * Fraction;
+  Result.Yaw =
+      EarlierPose.Yaw / Tuning::AngleScale +
+      AngleDelta(LaterPose.Yaw / Tuning::AngleScale, EarlierPose.Yaw / Tuning::AngleScale) *
+          Fraction;
+  Result.Pitch = (EarlierPose.Pitch * (1 - Fraction) + LaterPose.Pitch * Fraction) * .01f;
+  Result.Roll = (EarlierPose.Roll * (1 - Fraction) + LaterPose.Roll * Fraction) * .01f;
+  Result.Segment = EarlierPose.NodeIndex;
+  Result.Speed = std::sqrt((SecondPoint.CoordinateX - FirstPoint.CoordinateX) *
+                               (SecondPoint.CoordinateX - FirstPoint.CoordinateX) +
+                           (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ) *
+                               (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ)) /
+                 std::max(.001f, End - Start);
+  return Result;
+}
+bool Game::GhostPose(VehiclePose &Pose) const {
+  if (!GhostVisible || !GhostPoses || GhostCount < 2 || CurrentMode != GameMode::Racing ||
+      Elapsed > GhostDuration)
+    return false;
+  Pose = SampleReplay(GhostPoses, GhostCount, GhostInterval, GhostDuration, Elapsed);
+  return true;
+}
+void Game::ReplayTick(float DeltaTimeSeconds) {
+  if (ReplayCount < 2 || ReplayDuration <= 0)
+    return;
+  ReplayTime = std::fmod(ReplayTime + DeltaTimeSeconds, ReplayDuration);
+  const auto Pose =
+      SampleReplay(Replay.data(), ReplayCount, ReplayInterval, ReplayDuration, ReplayTime);
+  CarPosition = Pose.Position;
+  Yaw = CameraYaw = Pose.Yaw;
+  Pitch = Pose.Pitch;
+  Roll = Pose.Roll;
+  Segment = Pose.Segment;
+  Speed = Pose.Speed;
   Locate();
-  CameraYaw = Yaw;
   CameraHeight = CarPosition.CoordinateY;
-  Speed = std::sqrt((SecondPoint.CoordinateX - FirstPoint.CoordinateX) *
-                        (SecondPoint.CoordinateX - FirstPoint.CoordinateX) +
-                    (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ) *
-                        (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ)) /
-          std::max(.001f, End - Start);
 }
 void Game::TrackPreviewTick(float DeltaTimeSeconds) {
   TrackPreviewTime += std::min(DeltaTimeSeconds, Tuning::MaximumFrameDeltaSeconds);
-  const auto PreviewLayout = GetStageLayout(SelectedTrack);
+  const auto PreviewLayout = Layout();
   const int Anchor =
       SelectedTrack == 0   ? PreviewLayout.BridgeStart - Tuning::Preview::ForestApproach
       : SelectedTrack == 1 ? Tuning::Preview::BeachNode
@@ -295,9 +466,15 @@ void Game::DemoTick(float DeltaTimeSeconds) {
     if (!DemoActive) {
       TitleCar = SelectedCar;
       TitleTrack = SelectedTrack;
+      TitleVariant = SelectedVariant;
+      TitleChallenge = Challenge;
     }
     int Next = DemoActive ? (SelectedTrack + 1) % TrackCount : 0;
     DemoActive = true;
+    SelectedVariant = 0;
+    Challenge = false;
+    SelectedTrack = Next;
+    BuildTrack();
     SelectCarAndTrack(TitleCar, Next);
     Segment = Next == 0 ? Tuning::BridgeStart - 12 : Next == 1 ? 45 : Tuning::TunnelStart - 14;
     CarPosition = Road[Segment].Position;
@@ -332,36 +509,48 @@ const char *Game::GetSectionName(int NodeIndex) const {
                                : Winter)[GetSectionIndex(NodeIndex)];
 }
 const std::array<float, SectorCount> &Game::GetDefaultSplits() const {
-  return Targets[SelectedTrack * CarCount + SelectedCar];
+  if (Challenge)
+    return ChallengeTargets;
+  return SelectedVariant ? VariantTargets : Targets[SelectedTrack * CarCount + SelectedCar];
 }
 bool Game::Icy(int NodeIndex) const {
+  NodeIndex = SourceNode(NodeIndex);
   return SelectedTrack == 2 &&
          ((NodeIndex >= 76 && NodeIndex < 89) || (NodeIndex >= 190 && NodeIndex < 218));
 }
 float Game::SurfaceGrip(int NodeIndex) const {
-  const auto &Layout = GetStageLayout(SelectedTrack);
   if (Icy(NodeIndex))
     return .76f;
-  if (NodeIndex >= Layout.SurfaceStart && NodeIndex < Layout.SurfaceEnd)
+  if (NodeIndex >= Features.SurfaceStart && NodeIndex < Features.SurfaceEnd)
     return SelectedTrack == 1 ? .78f : .88f;
   return 1.f;
 }
 void Game::SelectCarAndTrack(int CarIndex, int TrackIndex) {
   TrackPreviewTime = 0;
+  ClearGhost();
   SelectedCar = std::clamp(CarIndex, 0, CarCount - 1);
   TrackIndex = std::clamp(TrackIndex, 0, TrackCount - 1);
   if (SelectedTrack != TrackIndex) {
     SelectedTrack = TrackIndex;
     BuildTrack();
   }
-  BestSplits = Records[RecordIndex()].Splits;
+  const auto &BaseTargets = Targets[SelectedTrack * CarCount + SelectedCar];
+  VariantTargets = BaseTargets;
+  if (SelectedVariant & 1) {
+    for (int Index = 0; Index < SectorCount - 1; ++Index)
+      VariantTargets[Index] = BaseTargets.back() - BaseTargets[SectorCount - 2 - Index];
+  }
+  for (int Index = 0; Index < SectorCount; ++Index)
+    ChallengeTargets[Index] = (SectorEnds[Index] - 1) * SegmentLength / 14.f;
+  BestSplits = Challenge ? ChallengeRecords[SelectedCar * 2 + int(SteeringAssist)].Splits
+                         : Records[RecordIndex()].Splits;
   Best = BestSplits.back();
   Restart();
 }
 void Game::SelectReference() {
-  ReferenceSplits = (Best > 0 && Best < GetDefaultSplits().back() && BestSplits[0] > 0)
-                        ? BestSplits
-                        : GetDefaultSplits();
+  ReferenceSplits = (Best > 0 && BestSplits[0] > 0) ? BestSplits
+                    : Challenge                     ? std::array<float, SectorCount>{}
+                                                    : GetDefaultSplits();
 }
 float Game::TerrainHeight(int Index, float Side) const {
   Index = std::clamp(Index, 0, NodeCount - 1);
@@ -373,7 +562,7 @@ float Game::TerrainHeight(int Index, float Side) const {
     return Count.Position.CoordinateY + Side * Count.Bank;
   if (Bridge(Index) || Bridge(Index - 1))
     return Count.Position.CoordinateY - Tuning::RiverDrop * Clamp((Distance - Verge) / 2.f, 0, 1);
-  if (Coast(Index) && Side > 0)
+  if (Coast(Index) && Side * CoastSide() > 0)
     return Count.Position.CoordinateY -
            Tuning::BeachDrop * Clamp((Distance - Verge) / std::max(1.f, Bank - Verge), 0, 1);
   float Rise = Side < 0 ? Count.VergeLeft : Count.VergeRight;
@@ -648,7 +837,7 @@ void Game::SimulatePhysics(float DeltaTimeSeconds, const DrivingInput &PlayerInp
     VerticalSpeed = std::min(0.f, VerticalSpeed);
   }
   // Convex authored crests launch the car only when road support falls away.
-  const int CrestNode = GetStageLayout(SelectedTrack).Crest;
+  const int CrestNode = Features.Crest;
   const bool Crest = CrestNode >= 0 && Segment >= CrestNode - 2 && Segment <= CrestNode + 2;
   if (!Airborne && Crest && Speed > Tuning::Physics::JumpSpeed &&
       VerticalSpeed > Tuning::Physics::JumpRise &&
@@ -745,8 +934,17 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
   MenuRight = PlayerInput.Right;
   if (CurrentMode == GameMode::Title) {
     if (PlayerInput.Action) {
-      if (DemoActive)
-        SelectCarAndTrack(TitleCar, TitleTrack);
+      if (DemoActive) {
+        if (TitleChallenge)
+          SetChallengeSeed(ChallengeSeed);
+        else {
+          Challenge = false;
+          SelectedTrack = TitleTrack;
+          SelectedVariant = TitleVariant;
+          BuildTrack();
+        }
+        SelectCarAndTrack(TitleCar, SelectedTrack);
+      }
       DemoActive = false;
       CurrentMode = GameMode::CarSelect;
     } else
@@ -757,16 +955,40 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
     const GameMode SelectionMode = CurrentMode;
     if (SelectionMode == GameMode::TrackSelect)
       TrackPreviewTick(DeltaTimeSeconds);
+    if (SelectionMode == GameMode::TrackSelect && (LeftEdge || RightEdge) && VariantUnlocked()) {
+      SelectVariant((SelectedVariant + int(RightEdge) - int(LeftEdge) + VariantCount) %
+                    VariantCount);
+      CurrentMode = SelectionMode;
+    }
+    if (SelectionMode == GameMode::TrackSelect && SeedEditor) {
+      SeedDigit = (SeedDigit + int(RightEdge) - int(LeftEdge) + 8) % 8;
+      const int Shift = (7 - SeedDigit) * 4;
+      const unsigned Digit = ((EditingSeed >> Shift) + int(UpEdge) - int(DownEdge)) & 15;
+      EditingSeed = (EditingSeed & ~(15u << Shift)) | (Digit << Shift);
+      if (PlayerInput.Back)
+        SeedEditor = false;
+      else if (PlayerInput.Action)
+        SetChallengeSeed(EditingSeed);
+      return;
+    }
+    if (SelectionMode == GameMode::TrackSelect && Challenge) {
+      if (PlayerInput.Auxiliary)
+        RandomRequested = true;
+      if (RightEdge || LeftEdge) {
+        SeedEditor = true;
+        EditingSeed = ChallengeSeed;
+        SeedDigit = 0;
+      }
+    }
     if (SelectionMode == GameMode::CarSelect && PlayerInput.Auxiliary)
       ToggleAssist();
     const int Move = SelectionMode == GameMode::CarSelect ? int(RightEdge) - int(LeftEdge)
                                                           : int(DownEdge) - int(UpEdge);
     if (Move) {
-      SelectCarAndTrack(
-          SelectionMode == GameMode::CarSelect ? (SelectedCar + Move + CarCount) % CarCount
-                                               : SelectedCar,
-          SelectionMode == GameMode::TrackSelect ? (SelectedTrack + Move + TrackCount) % TrackCount
-                                                 : SelectedTrack);
+      if (SelectionMode == GameMode::TrackSelect)
+        ChooseCourse((CourseChoice() + Move + TrackCount + 1) % (TrackCount + 1));
+      else
+        SelectCarAndTrack((SelectedCar + Move + CarCount) % CarCount, SelectedTrack);
       CurrentMode = SelectionMode;
     }
     if (PlayerInput.Back)
@@ -774,7 +996,8 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
     else if (PlayerInput.Action) {
       if (SelectionMode == GameMode::CarSelect)
         CurrentMode = GameMode::TrackSelect;
-      else if (Unlocked(SelectedTrack)) {
+      else if (Challenge ||
+               (Unlocked(SelectedTrack) && (SelectedVariant == 0 || VariantUnlocked()))) {
         Restart();
         SaveRequested = true;
       }
@@ -806,12 +1029,12 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
     return;
   }
   if (CurrentMode == GameMode::Paused) {
-    const int ChoiceCount = OptionsOpen ? 3 : 4;
+    const int ChoiceCount = OptionsOpen ? 4 : 5;
     MenuSelection = (MenuSelection + int(DownEdge) - int(UpEdge) + ChoiceCount) % ChoiceCount;
     if (PlayerInput.Back) {
       if (OptionsOpen) {
         OptionsOpen = false;
-        MenuSelection = 2;
+        MenuSelection = 3;
       } else
         CurrentMode = ResumeMode;
     } else if (PlayerInput.Action) {
@@ -819,17 +1042,22 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
         if (MenuSelection == 0)
           ToggleAudio();
         else if (MenuSelection == 1) {
+          GhostVisible = !GhostVisible;
+          SaveRequested = true;
+        } else if (MenuSelection == 2) {
           PaceNotes = !PaceNotes;
           SaveRequested = true;
         } else {
           OptionsOpen = false;
-          MenuSelection = 2;
+          MenuSelection = 3;
         }
       } else if (MenuSelection == 0)
         CurrentMode = ResumeMode;
       else if (MenuSelection == 1)
+        RetrySplit();
+      else if (MenuSelection == 2)
         Restart();
-      else if (MenuSelection == 2) {
+      else if (MenuSelection == 3) {
         OptionsOpen = true;
         MenuSelection = 0;
       } else {
@@ -858,9 +1086,13 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
   while (Remaining > .00001f) {
     float Step = std::min(Tuning::PhysicsStep, Remaining);
     SimulatePhysics(Step, PlayerInput);
-    RecordClock += Step;
-    if (RecordClock + .0001f >= NextSample)
+    const float OfficialClock = Elapsed - ReplayOriginTime - Remaining + Step;
+    // Recovery penalties and long frame gaps occupy time in the ghost too.
+    while (NextSample <= OfficialClock) {
+      RecordClock = NextSample;
       RecordPose();
+    }
+    RecordClock = OfficialClock;
     Remaining -= Step;
   }
   if (SplitCount < SectorCount && Segment + SegmentFraction >= SectorEnds[SplitCount] &&
@@ -869,6 +1101,7 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
     SplitDelta = Elapsed - ReferenceSplits[SplitCount];
     ++SplitCount;
     SplitMessage = Tuning::Physics::MessageSeconds;
+    CaptureSplit();
   }
   if (SplitCount == SectorCount) {
     if (RecordClock > ReplayDuration + .0001f)
@@ -876,11 +1109,15 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
     CurrentMode = GameMode::Finished;
     CinematicTime = ReplayTime = 0;
     ShowRecords = false;
-    NewRecord = (Best <= 0 || Elapsed < Best);
+    NewRecord = !Practice && (Best <= 0 || Elapsed < Best);
     if (NewRecord) {
+      GhostSaveRequested = !Challenge;
       Best = Elapsed;
       BestSplits = Splits;
-      Records[RecordIndex()].Splits = Splits;
+      if (Challenge)
+        ChallengeRecords[SelectedCar * 2 + int(SteeringAssist)].Splits = Splits;
+      else
+        Records[RecordIndex()].Splits = Splits;
       SaveRequested = true;
     }
   }
@@ -974,7 +1211,7 @@ void EncodeSave(const Game &GameState, SaveData &Save) {
           uint32_t(Clamp(GameState.Records[Index].Splits[OtherIndex] * Tuning::Milliseconds, 0,
                          float(Tuning::MaximumRecordMilliseconds)) +
                    .5f);
-  Save.Variant = GameState.SelectedVariant;
+  Save.Variant = GameState.DemoActive ? GameState.TitleVariant : GameState.SelectedVariant;
   Save.Seed = GameState.ChallengeSeed;
   Save.Checksum = SaveChecksum(Save);
 }
@@ -1023,6 +1260,8 @@ bool LoadSave(Game &GameState, const SaveData &Save) {
   GameState.DriftHintSeen = Save.CarSelectionAndFlags & Tuning::DriftHintFlag;
   GameState.SelectedVariant = int(Save.Variant);
   GameState.ChallengeSeed = Save.Seed;
+  GameState.SelectedTrack = int(Save.Track);
+  GameState.BuildTrack();
   GameState.SelectCarAndTrack(int(CarIndex), int(Save.Track));
   GameState.CurrentMode = GameMode::Title;
   return true;
@@ -1035,11 +1274,13 @@ const char *Game::MenuChoice() const {
     if (MenuSelection == 0)
       return Muted ? "SOUND OFF" : "SOUND ON";
     if (MenuSelection == 1)
+      return GhostVisible ? "GHOST ON" : "GHOST OFF";
+    if (MenuSelection == 2)
       return PaceNotes ? "PACE NOTES ON" : "PACE NOTES OFF";
     return "BACK";
   }
-  static const char *Choices[] = {"RESUME", "RESTART", "OPTIONS", "COURSES"};
-  return Choices[std::clamp(MenuSelection, 0, 3)];
+  static const char *Choices[] = {"RESUME", "RETRY LAST SPLIT", "RESTART", "OPTIONS", "COURSES"};
+  return Choices[std::clamp(MenuSelection, 0, 4)];
 }
 void Game::PaceNote(char *Text, std::size_t Capacity) const {
   if (!Capacity)
@@ -1047,7 +1288,7 @@ void Game::PaceNote(char *Text, std::size_t Capacity) const {
   Text[0] = 0;
   if (!PaceNotes)
     return;
-  const auto &Layout = GetStageLayout(SelectedTrack);
+  const auto Layout = this->Layout();
   const float Lead =
       std::clamp(Speed * Tuning::Driving::PaceLeadSeconds, Tuning::Driving::PaceMinimumDistance,
                  Tuning::Driving::PaceMaximumDistance) /

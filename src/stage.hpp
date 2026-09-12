@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 namespace GravelByte {
 constexpr int StageCheckpointCount = 5;
@@ -27,4 +28,18 @@ const StageLayout &GetStageLayout(int TrackIndex);
 float StageCurvature(const StageLayout &Layout, float Node);
 float StageElevation(const StageLayout &Layout, float Node);
 float StageWidth(const StageLayout &Layout, int Node);
+} // namespace GravelByte
+
+namespace GravelByte {
+struct RandomStage {
+  std::array<AuthoredCorner, 18> Corners{};
+  std::array<ElevationKey, 14> Elevations{};
+  std::array<int, StageCheckpointCount> Checkpoints{};
+  std::size_t CornerCount = 0, ElevationCount = 0;
+  int Biome = 0;
+  float SegmentLength = 6;
+};
+uint32_t StageRandom(uint32_t &State);
+void GenerateRandomStage(uint32_t Seed, RandomStage &Stage);
+StageLayout RandomStageLayout(const RandomStage &Stage);
 } // namespace GravelByte

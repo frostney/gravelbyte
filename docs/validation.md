@@ -3,9 +3,10 @@
 
 # Validation
 
-For the car-name migration and latest shadow fix, see
-[naming and shadow validation](naming-and-shadows.md). Earlier captures below
-retain the car labels and implementation details of their measured revisions.
+For the current course, replay and challenge updates, see
+[authored courses](authored-stages.md) and [replays and challenges](replays-and-challenges.md).
+Earlier captures below retain the car labels and implementation details of
+their measured revisions, including [naming and shadow validation](naming-and-shadows.md).
 
 ## Audit, failure paths and accessible page update
 

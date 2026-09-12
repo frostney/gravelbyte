@@ -123,3 +123,67 @@ float StageWidth(const StageLayout &Layout, int Node) {
   return Width;
 }
 } // namespace GravelByte
+
+namespace GravelByte {
+uint32_t StageRandom(uint32_t &State) {
+  State += 0x9e3779b9u;
+  uint32_t Value = State;
+  Value = (Value ^ (Value >> 16)) * 0x21f0aaadu;
+  Value = (Value ^ (Value >> 15)) * 0x735a2d97u;
+  return Value ^ (Value >> 15);
+}
+StageLayout RandomStageLayout(const RandomStage &Stage) {
+  auto Layout = GetStageLayout(Stage.Biome);
+  Layout.Corners = Stage.Corners.data();
+  Layout.CornerCount = Stage.CornerCount;
+  Layout.Elevations = Stage.Elevations.data();
+  Layout.ElevationCount = Stage.ElevationCount;
+  Layout.Checkpoints = Stage.Checkpoints;
+  Layout.SegmentLength = Stage.SegmentLength;
+  Layout.BaseWidth = 4.1f;
+  return Layout;
+}
+void GenerateRandomStage(uint32_t Seed, RandomStage &Stage) {
+  Stage = {};
+  uint32_t State = Seed;
+  Stage.Biome = StageRandom(State) % 3;
+  Stage.SegmentLength = 5.f + float(StageRandom(State) % 21) * .1f;
+  const auto &Base = GetStageLayout(Stage.Biome);
+  Stage.ElevationCount = Base.ElevationCount;
+  for (std::size_t Index = 0; Index < Base.ElevationCount; ++Index) {
+    Stage.Elevations[Index] = Base.Elevations[Index];
+    Stage.Elevations[Index].Height *= .75f;
+  }
+  for (int Index = 0; Index < StageCheckpointCount - 1; ++Index)
+    Stage.Checkpoints[Index] = 50 + Index * 58 + int(StageRandom(State) % 21);
+  Stage.Checkpoints.back() = 297;
+  // Alternate bounded heading targets. A forward heading under one radian
+  // keeps the route monotonic in Z and prevents crossing itself. Four or more
+  // straight nodes separate corners; bridge/tunnel/crest landings remain clear.
+  float Heading = 0;
+  int Sign = StageRandom(State) & 1 ? 1 : -1;
+  for (int Start = 12; Start < 276 && Stage.CornerCount < Stage.Corners.size();) {
+    const int Length = 10 + StageRandom(State) % 11;
+    const int End = std::min(293, Start + Length);
+    const auto Overlaps = [&](int First, int Last) {
+      return First >= 0 && Start < Last + 4 && End > First - 4;
+    };
+    if (!Overlaps(Base.BridgeStart, Base.BridgeEnd) &&
+        !Overlaps(Base.TunnelStart, Base.TunnelEnd) && !Overlaps(Base.Crest - 2, Base.Crest + 2)) {
+      const float Target = Sign * (.35f + float(StageRandom(State) % 46) * .01f);
+      const float Turn = Target - Heading;
+      const int Shape = StageRandom(State) % 3;
+      float Entry = Shape == 0 ? .5f : 1.f, Apex = Shape == 1 ? .35f : 1.f,
+            Exit = Shape == 2 ? .5f : 1.f;
+      const float Scale =
+          Turn * 4.f / ((Entry + Apex + Exit) * (End - Start) * Stage.SegmentLength);
+      const float LimitedScale = std::clamp(Scale, -.048f, .048f);
+      Stage.Corners[Stage.CornerCount++] = {Start, End, Entry * LimitedScale, Apex * LimitedScale,
+                                            Exit * LimitedScale};
+      Heading += LimitedScale * (Entry + Apex + Exit) * (End - Start) * Stage.SegmentLength / 4.f;
+      Sign = -Sign;
+    }
+    Start = End + 4 + StageRandom(State) % 5;
+  }
+}
+} // namespace GravelByte
