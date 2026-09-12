@@ -111,6 +111,8 @@ struct Game {
   void RecordPose(bool Final = false);
   void ReplayTick(float DeltaTimeSeconds);
   void DemoTick(float DeltaTimeSeconds);
+  void TrackPreviewTick(float DeltaTimeSeconds);
+  float TrackPreviewTime = 0;
   bool Unlocked(int Track) const;
   bool Bridge(int NodeIndex) const;
   bool Tunnel(int NodeIndex) const;

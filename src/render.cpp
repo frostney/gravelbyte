@@ -206,6 +206,8 @@ void Renderer::DrawGroundTriangle(Vector3 FirstVertex, Vector3 SecondVertex, Vec
                                   uint16_t SurfaceColor) {
   const int Start = FaceCount;
   DrawTriangle(FirstVertex, SecondVertex, ThirdVertex, SurfaceColor);
+  if (ShadowWidth <= 0)
+    return;
   if (Start == FaceCount || !ShadowEnabled ||
       std::max({FirstVertex.CoordinateX, SecondVertex.CoordinateX, ThirdVertex.CoordinateX}) <
           ShadowMinimumX ||
@@ -518,7 +520,8 @@ void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSeco
   RenderBackground(GameState, ViewYaw);
   if (GameState.CurrentMode != GameMode::CarSelect)
     RenderRoad(GameState, ViewYaw);
-  RenderCar(GameState);
+  if (GameState.CurrentMode != GameMode::TrackSelect)
+    RenderCar(GameState);
   GeometryMicroseconds = ProfileTimeMicroseconds() - GeometryStart;
   const uint32_t RasterStart = ProfileTimeMicroseconds();
   for (int Index = 0; Index < FaceCount; ++Index)
@@ -529,8 +532,9 @@ void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSeco
 float Renderer::PrepareCamera(const Game &GameState) {
   const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
   ProjectionY = Showroom ? Tuning::ShowroomCenterY : Tuning::CenterY;
-  const bool Cinematic =
-      GameState.CurrentMode == GameMode::Title || GameState.CurrentMode == GameMode::Finished;
+  const bool Cinematic = GameState.CurrentMode == GameMode::Title ||
+                         GameState.CurrentMode == GameMode::Finished ||
+                         GameState.CurrentMode == GameMode::TrackSelect;
   float ViewYaw = GameState.CameraYaw;
   CameraSine = std::sin(ViewYaw);
   CameraCosine = std::cos(ViewYaw);
@@ -592,7 +596,9 @@ void Renderer::PrepareShadow(const Game &GameState) {
   ShadowCenter = GameState.CarPosition;
   ShadowSine = std::sin(Showroom ? GameState.MenuRotation : GameState.Yaw);
   ShadowCosine = std::cos(Showroom ? GameState.MenuRotation : GameState.Yaw);
-  ShadowWidth = 1.05f * GameState.GetCarSpecification().Width;
+  ShadowWidth = GameState.CurrentMode == GameMode::TrackSelect
+                    ? 0.f
+                    : 1.05f * GameState.GetCarSpecification().Width;
   ShadowLength = 1.8f * GameState.GetCarSpecification().Length;
   const float ExtentX = std::abs(ShadowCosine) * ShadowWidth + std::abs(ShadowSine) * ShadowLength;
   const float ExtentZ = std::abs(ShadowSine) * ShadowWidth + std::abs(ShadowCosine) * ShadowLength;
@@ -1061,7 +1067,14 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     return;
   }
   if (GameState.CurrentMode == GameMode::TrackSelect) {
-    DrawRectangle(0, 0, 120, 120, Dark);
+    // Keep the real selected-course view visible behind a legible menu and map.
+    for (int Index = 0; Index < FramebufferWidth * FramebufferHeight; ++Index) {
+      const uint16_t Color = Pixels[Index];
+      Pixels[Index] = MakeColor(
+          ((Color >> 12) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator,
+          ((Color >> 8) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator,
+          ((Color >> 4) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator);
+    }
     for (int TrackIndex = 0; TrackIndex < TrackCount; ++TrackIndex) {
       const int Top = 3 + TrackIndex * 10;
       DrawText(3, Top, TrackIndex == GameState.SelectedTrack ? ">" : " ", Yellow);

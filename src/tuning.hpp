@@ -83,3 +83,9 @@ constexpr unsigned Brightness = 100;
 constexpr float FinishSeconds = .4f, SplitSeconds = .8f;
 constexpr float CountdownBase = 20.f, CountdownAmplitude = 45.f, CountdownPulseRate = 8.f;
 } // namespace GravelByte::Tuning::Feedback
+
+namespace GravelByte::Tuning::Preview {
+constexpr float TravelNodes = 8.f, TravelRate = .18f;
+constexpr int ForestApproach = 8, BeachNode = 45, TunnelApproach = 14;
+constexpr int TintNumerator = 3, TintDenominator = 8;
+} // namespace GravelByte::Tuning::Preview

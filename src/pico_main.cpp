@@ -82,7 +82,11 @@ void init() {
 #ifdef GRAVELBYTE_BENCHMARK
   // Measure the normal audio workload independently of the player's saved mute
   // preference. Benchmark firmware never persists this temporary override.
+#ifdef GRAVELBYTE_TEST_SILENT
+  GameState.Muted = true;
+#else
   GameState.Muted = false;
+#endif
   GameState.SelectCarAndTrack(GRAVELBYTE_BENCHMARK_START % 3, GRAVELBYTE_BENCHMARK_START / 3);
   GameState.CurrentMode = GravelByte::GameMode::Countdown;
 #endif
@@ -170,6 +174,7 @@ void update(uint32_t) {
   if (VerifiedSaves != SavesBefore)
     LastUpdateMicroseconds = picosystem::time_us();
 #endif
+#ifndef GRAVELBYTE_TEST_SILENT
   if (!GameState.Muted &&
       (GameState.CurrentMode == GravelByte::GameMode::Racing ||
        GameState.CurrentMode == GravelByte::GameMode::Title ||
@@ -183,6 +188,7 @@ void update(uint32_t) {
     else
       play(voice(0, 0, 80, 10, 0, 0, 0, 12, 12), int(GameState.EngineFrequency()), 75, 22);
   }
+#endif
   if (GameState.CurrentMode == GravelByte::GameMode::Countdown) {
     const uint8_t Amber =
         uint8_t(GravelByte::Tuning::Feedback::CountdownBase +

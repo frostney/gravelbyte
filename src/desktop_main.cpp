@@ -24,7 +24,11 @@ static void GenerateAudio(void *, Uint8 *Stream, int Bytes) {
     AudioPhase += SoundFrequency / float(Tuning::Audio::SampleRate);
     if (AudioPhase >= 1)
       AudioPhase -= 1;
+#ifdef GRAVELBYTE_TEST_SILENT
+    Samples[Index] = 0;
+#else
     Samples[Index] = int16_t((AudioPhase < .45f ? 1 : -1) * SoundVolume * 1800);
+#endif
   }
 }
 static void Save() {

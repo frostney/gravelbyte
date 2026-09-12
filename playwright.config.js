@@ -6,6 +6,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:8174',
     trace: 'retain-on-failure',
+    launchOptions: { args: process.env.GRAVELBYTE_TEST_SILENT === '1' ? ['--mute-audio'] : [] },
   },
   webServer: {
     command: 'python3 -m http.server 8174 --directory build-web/site',

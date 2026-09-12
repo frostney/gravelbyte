@@ -272,6 +272,24 @@ void Game::ReplayTick(float DeltaTimeSeconds) {
                         (SecondPoint.CoordinateZ - FirstPoint.CoordinateZ)) /
           std::max(.001f, End - Start);
 }
+void Game::TrackPreviewTick(float DeltaTimeSeconds) {
+  TrackPreviewTime += std::min(DeltaTimeSeconds, Tuning::MaximumFrameDeltaSeconds);
+  const auto PreviewLayout = GetStageLayout(SelectedTrack);
+  const int Anchor =
+      SelectedTrack == 0   ? PreviewLayout.BridgeStart - Tuning::Preview::ForestApproach
+      : SelectedTrack == 1 ? Tuning::Preview::BeachNode
+                           : PreviewLayout.TunnelStart - Tuning::Preview::TunnelApproach;
+  const float Position = std::clamp(float(Anchor), 1.f, float(NodeCount - 3)) +
+                         Tuning::Preview::TravelNodes *
+                             (.5f - .5f * std::cos(TrackPreviewTime * Tuning::Preview::TravelRate));
+  Segment = std::clamp(int(Position), 1, NodeCount - 2);
+  SegmentFraction = Position - Segment;
+  CarPosition = Road[Segment].Position +
+                (Road[Segment + 1].Position - Road[Segment].Position) * SegmentFraction;
+  CameraYaw = Yaw = Road[Segment].Heading;
+  GroundY = CameraHeight = CarPosition.CoordinateY;
+  Speed = 0;
+}
 void Game::DemoTick(float DeltaTimeSeconds) {
   if (!DemoActive || DemoTime >= Tuning::ShowcaseSeconds) {
     if (!DemoActive) {
@@ -329,6 +347,7 @@ float Game::SurfaceGrip(int NodeIndex) const {
   return 1.f;
 }
 void Game::SelectCarAndTrack(int CarIndex, int TrackIndex) {
+  TrackPreviewTime = 0;
   SelectedCar = std::clamp(CarIndex, 0, CarCount - 1);
   TrackIndex = std::clamp(TrackIndex, 0, TrackCount - 1);
   if (SelectedTrack != TrackIndex) {
@@ -736,6 +755,8 @@ void Game::Update(float DeltaTimeSeconds, const DrivingInput &PlayerInput) {
   }
   if (CurrentMode == GameMode::CarSelect || CurrentMode == GameMode::TrackSelect) {
     const GameMode SelectionMode = CurrentMode;
+    if (SelectionMode == GameMode::TrackSelect)
+      TrackPreviewTick(DeltaTimeSeconds);
     if (SelectionMode == GameMode::CarSelect && PlayerInput.Auxiliary)
       ToggleAssist();
     const int Move = SelectionMode == GameMode::CarSelect ? int(RightEdge) - int(LeftEdge)

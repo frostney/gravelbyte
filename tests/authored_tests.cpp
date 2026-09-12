@@ -16,6 +16,25 @@ static void Press(Game &GameState, DrivingInput Input) {
   GameState.Update(.02f, Input);
 }
 int main() {
+  Game Preview;
+  Preview.SelectCarAndTrack(0, 0);
+  Preview.CurrentMode = GameMode::TrackSelect;
+  Preview.Update(.02f, {});
+  const auto PreviewPosition = Preview.CarPosition;
+  for (int Frame = 0; Frame < 200; ++Frame)
+    Preview.Update(.02f, {});
+  Check(Preview.CarPosition.CoordinateX != PreviewPosition.CoordinateX ||
+            Preview.CarPosition.CoordinateZ != PreviewPosition.CoordinateZ,
+        "selected course preview moves through the actual scenery");
+  Check(Preview.Elapsed == 0 && Preview.SplitCount == 0 && Preview.Best == 0,
+        "preview does not run the timer or award records");
+  DrivingInput ConfirmPreview;
+  ConfirmPreview.Action = true;
+  Preview.Update(.02f, ConfirmPreview);
+  Check(Preview.CurrentMode == GameMode::Countdown && Preview.Segment == 1 &&
+            Preview.CarPosition.CoordinateX == Preview.Road[1].Position.CoordinateX &&
+            Preview.Speed == 0,
+        "confirm leaves the preview and starts from a stationary grid");
   Game CountdownSave;
   CountdownSave.Restart();
   CountdownSave.SaveRequested = false;

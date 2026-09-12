@@ -43,3 +43,17 @@ or geometry overflows. See `authored-device-results.json` for per-race results a
 artifact hashes. The verified normal player was restored after diagnostics;
 the benchmark left both journal sectors unchanged. These automated drives do
 not replace human playtesting of the new medal thresholds.
+
+Track selection includes a gently moving, dimmed view of the selected course
+behind the list and checkpoint map. Preview movement does not advance the race
+clock, splits or records; confirming always restores the stationary starting grid.
+
+For quiet local testing, configure `GRAVELBYTE_TEST_SILENT=ON` for PicoSystem or
+desktop builds, or set `GRAVELBYTE_TEST_SILENT=1` when running browser tests.
+The browser setting mutes Chromium output while keeping audio-control logic intact.
+Silent measurements must be reported separately from the audio-enabled baseline.
+
+The September 12 silent player completed a 100-second title soak across biomes,
+then responded to USB reboot. Selection/start regression tests and 18 silent
+Chromium checks pass. This confirms the recovered connection, not the cause of
+the earlier USB stall.
