@@ -206,6 +206,8 @@ void Renderer::DrawGroundTriangle(Vector3 FirstVertex, Vector3 SecondVertex, Vec
                                   uint16_t SurfaceColor) {
   const int Start = FaceCount;
   DrawTriangle(FirstVertex, SecondVertex, ThirdVertex, SurfaceColor);
+  if (ShadowWidth <= 0)
+    return;
   if (Start == FaceCount || !ShadowEnabled ||
       std::max({FirstVertex.CoordinateX, SecondVertex.CoordinateX, ThirdVertex.CoordinateX}) <
           ShadowMinimumX ||
@@ -518,7 +520,8 @@ void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSeco
   RenderBackground(GameState, ViewYaw);
   if (GameState.CurrentMode != GameMode::CarSelect)
     RenderRoad(GameState, ViewYaw);
-  RenderCar(GameState);
+  if (GameState.CurrentMode != GameMode::TrackSelect)
+    RenderCar(GameState);
   GeometryMicroseconds = ProfileTimeMicroseconds() - GeometryStart;
   const uint32_t RasterStart = ProfileTimeMicroseconds();
   for (int Index = 0; Index < FaceCount; ++Index)
@@ -529,8 +532,9 @@ void Renderer::Render(const Game &GameState, uint16_t *Target, int FramesPerSeco
 float Renderer::PrepareCamera(const Game &GameState) {
   const bool Showroom = GameState.CurrentMode == GameMode::CarSelect;
   ProjectionY = Showroom ? Tuning::ShowroomCenterY : Tuning::CenterY;
-  const bool Cinematic =
-      GameState.CurrentMode == GameMode::Title || GameState.CurrentMode == GameMode::Finished;
+  const bool Cinematic = GameState.CurrentMode == GameMode::Title ||
+                         GameState.CurrentMode == GameMode::Finished ||
+                         GameState.CurrentMode == GameMode::TrackSelect;
   float ViewYaw = GameState.CameraYaw;
   CameraSine = std::sin(ViewYaw);
   CameraCosine = std::cos(ViewYaw);
@@ -592,7 +596,9 @@ void Renderer::PrepareShadow(const Game &GameState) {
   ShadowCenter = GameState.CarPosition;
   ShadowSine = std::sin(Showroom ? GameState.MenuRotation : GameState.Yaw);
   ShadowCosine = std::cos(Showroom ? GameState.MenuRotation : GameState.Yaw);
-  ShadowWidth = 1.05f * GameState.GetCarSpecification().Width;
+  ShadowWidth = GameState.CurrentMode == GameMode::TrackSelect
+                    ? 0.f
+                    : 1.05f * GameState.GetCarSpecification().Width;
   ShadowLength = 1.8f * GameState.GetCarSpecification().Length;
   const float ExtentX = std::abs(ShadowCosine) * ShadowWidth + std::abs(ShadowSine) * ShadowLength;
   const float ExtentZ = std::abs(ShadowSine) * ShadowWidth + std::abs(ShadowCosine) * ShadowLength;
@@ -688,7 +694,7 @@ void Renderer::RenderRoad(const Game &GameState, float ViewYaw) {
     uint16_t Grass = Grasses[Zone], RoadColor = Gravels[Zone];
     if (GameState.SelectedTrack == 1) {
       Grass = MakeColor(14, 12, 8);
-      RoadColor = MakeColor(12, 10, 6);
+      RoadColor = GameState.SurfaceGrip(Index) < .9f ? MakeColor(14, 12, 8) : MakeColor(12, 10, 6);
     }
     if (GameState.Bridge(Index))
       RoadColor = MakeColor(8, 7, 5);
@@ -829,7 +835,8 @@ void Renderer::RenderTrackObjects(const Game &GameState, int Index) {
     }
   }
   // Sector gates make the timing lines visible before reaching them.
-  if (std::find(SectorEnds.begin(), SectorEnds.end(), Index) != SectorEnds.end()) {
+  if (std::find(GameState.SectorEnds.begin(), GameState.SectorEnds.end(), Index) !=
+      GameState.SectorEnds.end()) {
     for (int Sign : {-1, 1}) {
       Vector3 Position = CurrentIndex(Index, Sign * (GameState.Road[Index].HalfWidth + .55f));
       DrawBox(Position, {.24f, 3.2f, .24f}, GameState.Road[Index].Heading, MakeColor(14, 12, 3));
@@ -980,10 +987,7 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
                      : GameState.ControlScheme == Controls::Keyboard ? "ESC"
                      : GameState.ControlScheme == Controls::Gamepad  ? "B"
                                                                      : "BACK";
-  const char *Pause = GameState.ControlScheme == Controls::Pico       ? "Y"
-                      : GameState.ControlScheme == Controls::Keyboard ? "P"
-                      : GameState.ControlScheme == Controls::Gamepad  ? "START"
-                                                                      : "PAUSE";
+
   const char *AuxiliaryLabel = GameState.ControlScheme == Controls::Keyboard ? "SPACE"
                                : GameState.ControlScheme == Controls::Touch  ? "TAP"
                                                                              : "X";
@@ -997,6 +1001,10 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     DrawCenteredText(99, Buffer, White);
     std::snprintf(Buffer, sizeof(Buffer), "%s SOUND %s", Audio, GameState.Muted ? "OFF" : "ON");
     DrawCenteredText(111, Buffer, Yellow);
+    if (GameState.DemoDrifting) {
+      std::snprintf(Buffer, sizeof(Buffer), "%s DRIFT", AuxiliaryLabel);
+      DrawCenteredText(83, Buffer, Yellow);
+    }
     return;
   }
   if (GameState.CurrentMode == GameMode::Finished) {
@@ -1021,6 +1029,13 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
       }
       DrawCenteredText(94, "SECONDS / CUMULATIVE", White);
     }
+    static const char *Medals[] = {"STAGE COMPLETE", "BRONZE", "SILVER", "GOLD"};
+    const int Medal = GameState.MedalForTime(GameState.Elapsed);
+    if (!GameState.ShowRecords)
+      DrawCenteredText(8, Medals[Medal],
+                       Medal == 1   ? MakeColor(12, 8, 5)
+                       : Medal == 2 ? MakeColor(12, 13, 14)
+                                    : Yellow);
     std::snprintf(Buffer, sizeof(Buffer), "%s RECORDS", AuxiliaryLabel);
     DrawCenteredText(104, Buffer, Yellow);
     std::snprintf(Buffer, sizeof(Buffer), "%s RETRY  %s SELECT", Confirm, Back);
@@ -1046,35 +1061,47 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     }
     std::snprintf(Buffer, sizeof(Buffer), "%s NEXT  %s BACK", Confirm, Back);
     DrawCenteredText(112, Buffer, White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s ASSIST %s", AuxiliaryLabel,
+                  GameState.SteeringAssist ? "ON" : "OFF");
+    DrawCenteredText(74, Buffer, Yellow);
     return;
   }
   if (GameState.CurrentMode == GameMode::TrackSelect) {
-    DrawRectangle(2, 3, 116, 24, Dark);
-    DrawCenteredText(8, TrackNames[GameState.SelectedTrack], White);
-    DrawCenteredText(19,
-                     GameState.SelectedTrack == 0   ? "FOREST GRAVEL"
-                     : GameState.SelectedTrack == 1 ? "DRY GRAVEL"
-                                                    : "SNOW AND ICE",
-                     Yellow);
-    DrawText(5, 52, "<", White, 2);
-    DrawText(107, 52, ">", White, 2);
-    DrawRectangle(4, 88, 112, 29, Dark);
-    TimeText(Buffer, sizeof(Buffer), GameState.GetDefaultSplits().back());
-    char Line[40];
-    std::snprintf(Line, sizeof(Line), "TO BEAT %s", Buffer);
-    if (GameState.Unlocked(GameState.SelectedTrack))
-      DrawCenteredText(92, Line, Yellow);
-    if (!GameState.Unlocked(GameState.SelectedTrack)) {
-      std::snprintf(Line, sizeof(Line), "BEAT %s", TrackNames[GameState.SelectedTrack - 1]);
-      DrawCenteredText(92, "LOCKED", Yellow);
-      DrawCenteredText(101, Line, White);
-    } else
-      DrawCenteredText(101, "1.8 KM  FIVE SPLITS", White);
-    std::snprintf(Buffer, sizeof(Buffer),
-                  GameState.Unlocked(GameState.SelectedTrack) ? "%s RACE  %s BACK"
-                                                              : "%s LOCKED  %s BACK",
-                  Confirm, Back);
-    DrawCenteredText(110, Buffer, White);
+    // Keep the real selected-course view visible behind a legible menu and map.
+    for (int Index = 0; Index < FramebufferWidth * FramebufferHeight; ++Index) {
+      const uint16_t Color = Pixels[Index];
+      Pixels[Index] = MakeColor(
+          ((Color >> 12) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator,
+          ((Color >> 8) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator,
+          ((Color >> 4) & 15) * Tuning::Preview::TintNumerator / Tuning::Preview::TintDenominator);
+    }
+    for (int TrackIndex = 0; TrackIndex < TrackCount; ++TrackIndex) {
+      const int Top = 3 + TrackIndex * 10;
+      DrawText(3, Top, TrackIndex == GameState.SelectedTrack ? ">" : " ", Yellow);
+      DrawText(10, Top, TrackNames[TrackIndex],
+               TrackIndex == GameState.SelectedTrack ? Yellow : White);
+      if (!GameState.Unlocked(TrackIndex))
+        DrawText(96, Top, "LOCK", MakeColor(8, 8, 8));
+    }
+    RenderTrackMap(GameState);
+    std::snprintf(Buffer, sizeof(Buffer), "%.2f KM",
+                  (GameState.SectorEnds.back() - 1) * GameState.SegmentLength / 1000.f);
+    DrawCenteredText(77, Buffer, White);
+    if (GameState.Unlocked(GameState.SelectedTrack)) {
+      static const char *Names[] = {"BRONZE", "SILVER", "GOLD"};
+      const uint16_t Colors[] = {MakeColor(12, 8, 5), MakeColor(12, 13, 14), Yellow};
+      for (int Tier = 1; Tier <= 3; ++Tier) {
+        char Time[20];
+        TimeText(Time, sizeof(Time), GameState.MedalTarget(Tier));
+        std::snprintf(Buffer, sizeof(Buffer), "%s %s", Names[Tier - 1], Time);
+        DrawCenteredText(85 + (Tier - 1) * 8, Buffer, Colors[Tier - 1]);
+      }
+    } else {
+      DrawCenteredText(88, "BRONZE TO UNLOCK", Yellow);
+      DrawCenteredText(98, TrackNames[GameState.SelectedTrack - 1], White);
+    }
+    std::snprintf(Buffer, sizeof(Buffer), "%s RACE %s BACK", Confirm, Back);
+    DrawCenteredText(111, Buffer, White);
     return;
   }
   DrawRectangle(2, 2, 36, 9, Dark);
@@ -1092,29 +1119,16 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     DrawCenteredText(34, Buffer,
                      GameState.SplitDelta <= 0 ? MakeColor(6, 15, 7) : MakeColor(15, 6, 4));
   }
-  // Pick the strongest curve in the next 90m, giving useful notice at racing speed.
-  float Upcoming = 0;
-  int Distance = 0;
-  for (int Index = GameState.Segment + 3; Index < std::min(NodeCount, GameState.Segment + 16);
-       ++Index)
-    if (std::abs(GameState.Road[Index].Turn) > std::abs(Upcoming)) {
-      Upcoming = GameState.Road[Index].Turn;
-      Distance = (Index - GameState.Segment) * int(TrackSegmentLength);
-    }
-  DrawRectangle(49, 2, 22, 18, Dark);
-  const int Sign = Upcoming < 0 ? -1 : 1;
-  if (std::abs(Upcoming) < .007f) {
-    DrawRectangle(59, 5, 2, 8, Yellow);
-    DrawRectangle(57, 5, 6, 2, Yellow);
-    DrawRectangle(58, 4, 4, 1, Yellow);
-  } else {
-    DrawRectangle(59, 7, 2, 6, Yellow);
-    DrawRectangle(Sign > 0 ? 59 : 54, 6, 7, 2, Yellow);
-    DrawRectangle(Sign > 0 ? 64 : 54, 4, 2, 6, Yellow);
-    DrawRectangle(Sign > 0 ? 66 : 52, 5, 1, 4, Yellow);
+  GameState.PaceNote(Buffer, sizeof(Buffer));
+  if (Buffer[0]) {
+    char *Qualifier = std::strchr(Buffer, ' ');
+    if (Qualifier)
+      *Qualifier++ = 0;
+    DrawRectangle(40, 2, 36, Qualifier ? 18 : 10, Dark);
+    DrawCenteredText(4, Buffer, Yellow);
+    if (Qualifier)
+      DrawCenteredText(13, Qualifier, White);
   }
-  std::snprintf(Buffer, sizeof(Buffer), "%d", Distance);
-  DrawCenteredText(14, Buffer, White);
   DrawRectangle(93, 99, 25, 17, Dark);
   std::snprintf(Buffer, sizeof(Buffer), "%03d", int(GameState.Speed * 3.6f));
   DrawText(95, 101, Buffer, White, 2);
@@ -1122,7 +1136,7 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
   DrawRectangle(3, 116, 114, 2, Dark);
   DrawRectangle(3, 116, int(114 * GameState.Progress()), 2, Yellow);
   for (int Index = 0; Index < SectorCount; ++Index) {
-    int CoordinateX = 3 + int(113.f * (SectorEnds[Index] - 1) / (NodeCount - 5));
+    int CoordinateX = 3 + int(113.f * (GameState.SectorEnds[Index] - 1) / (NodeCount - 5));
     const uint16_t CheckpointColor = GameState.Splits[Index] <= GameState.ReferenceSplits[Index]
                                          ? MakeColor(6, 15, 7)
                                          : MakeColor(15, 6, 4);
@@ -1143,22 +1157,23 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     DrawRectangle(45, 40, 30, 30, Dark);
     std::snprintf(Buffer, sizeof(Buffer), "%d", int(std::ceil(GameState.Countdown)));
     DrawCenteredText(45, Buffer, Yellow, 4);
+    if (GameState.ShowDriftHint) {
+      std::snprintf(Buffer, sizeof(Buffer), "%s + STEER TO DRIFT", AuxiliaryLabel);
+      DrawCenteredText(82, Buffer, Yellow);
+    }
   }
   if (GameState.CurrentMode == GameMode::Racing && GameState.Elapsed < .8f) {
     DrawRectangle(42, 42, 36, 19, Dark);
     DrawCenteredText(46, "GO", Yellow, 2);
   }
   if (GameState.CurrentMode == GameMode::Paused) {
-    DrawRectangle(5, 36, 110, 61, Dark);
-    DrawCenteredText(42, "PAUSED", Yellow, 2);
-    std::snprintf(Buffer, sizeof(Buffer), "%s RESUME", Pause);
-    DrawCenteredText(57, Buffer, White);
-    std::snprintf(Buffer, sizeof(Buffer), "%s RETRY", Confirm);
-    DrawCenteredText(67, Buffer, White);
-    std::snprintf(Buffer, sizeof(Buffer), "%s SELECT", Back);
-    DrawCenteredText(77, Buffer, White);
-    std::snprintf(Buffer, sizeof(Buffer), "%s SOUND %s", Audio, GameState.Muted ? "OFF" : "ON");
-    DrawCenteredText(88, Buffer, Yellow);
+    DrawRectangle(5, 36, 110, 70, Dark);
+    DrawCenteredText(42, GameState.OptionsOpen ? "OPTIONS" : "PAUSED", Yellow, 2);
+    DrawCenteredText(61, "^", White);
+    DrawCenteredText(73, GameState.MenuChoice(), Yellow);
+    DrawCenteredText(85, "V", White);
+    std::snprintf(Buffer, sizeof(Buffer), "%s SELECT %s BACK", Confirm, Back);
+    DrawCenteredText(98, Buffer, White);
   }
   if (Diagnostics) {
     DrawRectangle(0, 22, 46, 15, Dark);
@@ -1166,6 +1181,58 @@ void Renderer::RenderInterface(const Game &GameState, int FramesPerSecond, bool 
     DrawText(2, 24, Buffer, White);
     std::snprintf(Buffer, sizeof(Buffer), "%d TRI", FaceCount);
     DrawText(2, 31, Buffer, Yellow);
+  }
+}
+} // namespace GravelByte
+
+namespace GravelByte {
+void Renderer::DrawLine(int StartX, int StartY, int EndX, int EndY, uint16_t Color) {
+  const int DistanceX = std::abs(EndX - StartX), StepX = StartX < EndX ? 1 : -1;
+  const int DistanceY = -std::abs(EndY - StartY), StepY = StartY < EndY ? 1 : -1;
+  int Error = DistanceX + DistanceY;
+  for (;;) {
+    DrawRectangle(StartX, StartY, 1, 1, Color);
+    if (StartX == EndX && StartY == EndY)
+      break;
+    const int TwiceError = 2 * Error;
+    if (TwiceError >= DistanceY) {
+      Error += DistanceY;
+      StartX += StepX;
+    }
+    if (TwiceError <= DistanceX) {
+      Error += DistanceX;
+      StartY += StepY;
+    }
+  }
+}
+void Renderer::RenderTrackMap(const Game &GameState) {
+  float MinimumX = GameState.Road[1].Position.CoordinateX, MaximumX = MinimumX;
+  float MinimumZ = GameState.Road[1].Position.CoordinateZ, MaximumZ = MinimumZ;
+  for (int Index = 1; Index <= GameState.SectorEnds.back(); ++Index) {
+    const auto &Position = GameState.Road[Index].Position;
+    MinimumX = std::min(MinimumX, Position.CoordinateX);
+    MaximumX = std::max(MaximumX, Position.CoordinateX);
+    MinimumZ = std::min(MinimumZ, Position.CoordinateZ);
+    MaximumZ = std::max(MaximumZ, Position.CoordinateZ);
+  }
+  const float Scale = std::min(104.f / std::max(1.f, MaximumX - MinimumX),
+                               35.f / std::max(1.f, MaximumZ - MinimumZ));
+  const float OffsetX = 60.f - (MaximumX + MinimumX) * .5f * Scale;
+  const float OffsetY = 54.f + (MaximumZ + MinimumZ) * .5f * Scale;
+  auto Map = [&](int Index) {
+    const auto &Position = GameState.Road[Index].Position;
+    return std::array<int, 2>{int(std::lround(OffsetX + Position.CoordinateX * Scale)),
+                              int(std::lround(OffsetY - Position.CoordinateZ * Scale))};
+  };
+  for (int Index = 1; Index < GameState.SectorEnds.back(); ++Index) {
+    const auto Start = Map(Index), End = Map(Index + 1);
+    DrawLine(Start[0], Start[1], End[0], End[1], MakeColor(10, 11, 10));
+  }
+  const auto Start = Map(1);
+  DrawRectangle(Start[0] - 1, Start[1] - 1, 3, 3, MakeColor(6, 15, 7));
+  for (int Index = 0; Index < SectorCount; ++Index) {
+    const auto Position = Map(GameState.SectorEnds[Index]);
+    DrawRectangle(Position[0] - 1, Position[1] - 1, 3, 3, MakeColor(15, 14, 7));
   }
 }
 } // namespace GravelByte

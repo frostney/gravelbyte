@@ -1,4 +1,5 @@
 #pragma once
+#include "stage.hpp"
 #include "tuning.hpp"
 #include <array>
 #include <cstdint>
@@ -7,10 +8,9 @@ namespace GravelByte {
 constexpr int FramebufferWidth = 120, FramebufferHeight = 120, NodeCount = 301;
 constexpr float TrackSegmentLength = 6.0f, RoadHalfWidth = 4.1f;
 constexpr int SectorCount = 5;
-constexpr std::array<int, SectorCount> SectorEnds{60, 120, 180, 240, NodeCount - 4};
 // Cumulative times from one braking-aware drive, with a 2.4% margin.
 constexpr std::array<float, SectorCount> DefaultSplits{22.02f, 45.32f, 67.22f, 92.21f, 113.f};
-constexpr uint32_t CourseVersion = 3;
+constexpr uint32_t CourseVersion = 4;
 struct Vector3 {
   float CoordinateX = 0, CoordinateY = 0, CoordinateZ = 0;
 };
@@ -39,12 +39,14 @@ struct TrackNode {
   float HalfWidth = RoadHalfWidth, FarLeft = 100, FarRight = 100;
 };
 struct DrivingInput {
-  bool Left = false, Right = false, Throttle = false, Brake = false, Handbrake = false,
-       Action = false, Pause = false, Back = false, Auxiliary = false, Mute = false;
+  bool Left = false, Right = false, Up = false, Down = false, Throttle = false, Brake = false,
+       Handbrake = false, Action = false, Pause = false, Back = false, Auxiliary = false,
+       Mute = false;
 };
 enum class GameMode { Title, CarSelect, TrackSelect, Countdown, Racing, Paused, Finished };
 enum class Controls { Pico, Keyboard, Gamepad, Touch };
-constexpr int CarCount = 3, TrackCount = 3;
+constexpr int CarCount = 3, TrackCount = 3, VariantCount = 4;
+constexpr int RecordCount = CarCount * TrackCount * VariantCount * 2;
 struct CarSpecification {
   const char *Name;
   const char *Difficulty;
@@ -65,6 +67,20 @@ struct ReplayPose {
 };
 static_assert(sizeof(ReplayPose) == 12);
 struct Game {
+  float SegmentLength = TrackSegmentLength;
+  std::array<int, SectorCount> SectorEnds = GetStageLayout(0).Checkpoints;
+  bool SteeringAssist = false, PaceNotes = true, DriftHintSeen = false, DemoDrifting = false;
+  bool ShowDriftHint = false;
+  int SelectedVariant = 0;
+  bool GhostVisible = true;
+  uint32_t ChallengeSeed = 1;
+  int RecordIndex() const;
+  static int RecordIndex(int Track, int Car, int Variant, bool Assisted);
+  void ToggleAssist();
+  float MedalTarget(int Medal) const;
+  int MedalForTime(float Seconds) const;
+  void PaceNote(char *Text, std::size_t Capacity) const;
+  float EngineFrequency() const;
   std::array<TrackNode, NodeCount> Road{};
   std::array<std::array<Vector3, 10>, NodeCount> Terrain{};
   std::array<std::array<Vector3, 5>, Tuning::MountainSections + 1> Mountain{};
@@ -82,6 +98,9 @@ struct Game {
   bool NewRecord = false, SaveRequested = false;
   int SelectedCar = 1, SelectedTrack = 0;
   bool Muted = false, ShowRecords = false, DemoActive = false;
+  bool OptionsOpen = false;
+  int MenuSelection = 0;
+  const char *MenuChoice() const;
   int TitleCar = 1, TitleTrack = 0;
   float CinematicTime = 0, DemoTime = 0;
   std::array<float, SectorCount> PriorSplits{};
@@ -92,6 +111,8 @@ struct Game {
   void RecordPose(bool Final = false);
   void ReplayTick(float DeltaTimeSeconds);
   void DemoTick(float DeltaTimeSeconds);
+  void TrackPreviewTick(float DeltaTimeSeconds);
+  float TrackPreviewTime = 0;
   bool Unlocked(int Track) const;
   bool Bridge(int NodeIndex) const;
   bool Tunnel(int NodeIndex) const;
@@ -100,8 +121,8 @@ struct Game {
   void ToggleAudio();
   Controls ControlScheme = Controls::Pico;
   float MenuRotation = 0;
-  bool MenuLeft = false, MenuRight = false;
-  std::array<StageRecord, CarCount * TrackCount> Records{};
+  bool MenuLeft = false, MenuRight = false, MenuUp = false, MenuDown = false;
+  std::array<StageRecord, RecordCount> Records{};
   const CarSpecification &GetCarSpecification() const { return Cars[SelectedCar]; }
   void BuildTrack();
   void SelectCarAndTrack(int CarIndex, int TrackIndex);
@@ -126,10 +147,12 @@ struct Game {
 };
 struct SaveData {
   uint32_t Magic = 0, Version = 0, CarSelectionAndFlags = 1, Track = 0;
-  std::array<std::array<uint32_t, SectorCount>, CarCount * TrackCount> Times{};
+  uint32_t Variant = 0, Seed = 1, Course = CourseVersion;
+  std::array<std::array<uint32_t, SectorCount>, RecordCount> Times{};
   uint32_t Checksum = 0;
 };
 SaveData EncodeSave(const Game &GameState);
+void EncodeSave(const Game &GameState, SaveData &Save);
 bool ValidSave(const SaveData &Save);
 bool LoadSave(Game &GameState, const SaveData &Save);
 struct SaveRecord {
@@ -198,6 +221,8 @@ struct Renderer {
   void RenderScenery(const Game &GameState, int NodeIndex);
   void RenderTrackObjects(const Game &GameState, int NodeIndex);
   void RenderCar(const Game &GameState);
+  void RenderTrackMap(const Game &GameState);
+  void DrawLine(int StartX, int StartY, int EndX, int EndY, uint16_t Color);
   void RenderInterface(const Game &GameState, int FramesPerSecond, bool Diagnostics);
   Vector3 ShadowCenter{};
   float ShadowSine = 0, ShadowCosine = 1, ShadowWidth = 1.05f, ShadowLength = 1.8f;

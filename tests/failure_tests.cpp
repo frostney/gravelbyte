@@ -15,7 +15,7 @@ static void Check(bool Passed, const char *Description) {
   }
 }
 alignas(4) static std::array<std::array<uint8_t, 4096>, 2> Flash;
-static int EraseBytes = 4096, ProgramBytes = 256, WrittenSlot = -1;
+static int EraseBytes = 4096, ProgramBytes = SaveProgramBytes, WrittenSlot = -1;
 static const SaveSlot &Slot(int Index) {
   return *reinterpret_cast<const SaveSlot *>(Flash[Index].data());
 }
@@ -24,7 +24,7 @@ static void FakeFlashWrite(int Target, const SaveSlot &Value) {
   std::fill_n(Flash[Target].begin(), EraseBytes, 0xff);
   if (EraseBytes < 4096)
     return;
-  std::array<uint8_t, 256> Page;
+  std::array<uint8_t, SaveProgramBytes> Page;
   Page.fill(0xff);
   std::memcpy(Page.data(), &Value, sizeof(Value));
   for (int Index = 0; Index < ProgramBytes; ++Index)
@@ -65,7 +65,7 @@ int main() {
   Check(NewestSlot(Empty, Empty) == -1, "blank flash has no journal");
   // Exercise the exact writer-selection/readback algorithm used on hardware.
   for (int Current : {0, 1})
-    for (int Cut = 0; Cut <= 4096 + 256; ++Cut) {
+    for (int Cut = 0; Cut <= 4096 + SaveProgramBytes; ++Cut) {
       for (auto &Sector : Flash)
         Sector.fill(0xff);
       std::memcpy(Flash[Current].data(), &Old, sizeof(Old));
@@ -79,7 +79,7 @@ int main() {
       Check(Result != SaveResult::Saved || GameState.Muted,
             "success requires new setting readback");
     }
-  for (int Cut = 0; Cut <= 4096 + 256; ++Cut) {
+  for (int Cut = 0; Cut <= 4096 + SaveProgramBytes; ++Cut) {
     for (auto &Sector : Flash)
       Sector.fill(0xff);
     std::memcpy(Flash[1].data(), &Old.Data, sizeof(Old.Data));
@@ -88,10 +88,10 @@ int main() {
     ProgramBytes = std::max(0, Cut - 4096);
     StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite);
     Check(WrittenSlot == 0 && Flash[1] == Legacy,
-          "first migration preserves legacy sector across power loss");
+          "initial save preserves the other sector across power loss");
   }
   EraseBytes = 4096;
-  ProgramBytes = 256;
+  ProgramBytes = SaveProgramBytes;
   StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite);
   WrittenSlot = -1;
   Check(StoreSave(Fresh.Data, Slot(0), Slot(1), FakeFlashWrite) == SaveResult::Unchanged &&

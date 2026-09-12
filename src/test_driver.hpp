@@ -18,11 +18,12 @@ inline DrivingInput CalculateDrivingInput(const Game &GameState) {
     float CornerSpeed = std::sqrt(6.5f * (GameState.GetCarSpecification().Traction / 8.5f) *
                                   GameState.SurfaceGrip(Index) / Curve);
     float Distance = std::max(
-        0.f, (Index - GameState.Segment - GameState.SegmentFraction) * TrackSegmentLength - 12.f);
+        0.f,
+        (Index - GameState.Segment - GameState.SegmentFraction) * GameState.SegmentLength - 12.f);
     Desired = std::min(Desired, std::sqrt(CornerSpeed * CornerSpeed + 2 * 6.f * Distance));
   }
   float Along = GameState.Segment + GameState.SegmentFraction +
-                (12 + GameState.Speed * .35f) / TrackSegmentLength;
+                (12 + GameState.Speed * .35f) / GameState.SegmentLength;
   int NodeIndex = std::min(NodeCount - 2, int(Along));
   Vector3 Target = GameState.Road[NodeIndex].Position +
                    (GameState.Road[NodeIndex + 1].Position - GameState.Road[NodeIndex].Position) *

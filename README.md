@@ -1,7 +1,7 @@
 # Gravelbyte
 
 A pocket rally game with software 3D roads, hills and loose-surface handling.
-Choose a car, pick a course and beat five split times across a 1.8km stage.
+Choose a car, pick a course and chase five split times across stages of different lengths.
 
 [Play in your browser](https://frostney.github.io/gravelbyte/) ·
 [Download PicoSystem firmware](https://frostney.github.io/gravelbyte/gravelbyte.uf2)
@@ -14,24 +14,35 @@ Choose a car, pick a course and beat five split times across a 1.8km stage.
 
 Bracken Ridge crosses a river bridge through the forest. Sunmeadow Run follows
 a palm-lined sandy beach beside coastal water. Frostpine Pass winds through snowy mountains
-and a tunnel, with visible blue ice reducing traction. Every car/course pair has its own default target
-and personal record. Higher DRIFT means the car slides more readily.
+and a tunnel, with visible blue ice reducing traction. Every car/course pair has bronze, silver and gold targets, with separate
+assisted and unassisted personal records. Higher DRIFT means the car slides more readily.
 
 The car selector shows a rotating model, name, difficulty and three stat bars.
 No selection counters or numeric stat fractions. Passed progress markers use the
 same green/red result colour as the unobtrusive signed split popup.
 
-Browse all tracks in the existing left/right selector. Beat a track's default
-finish target with any car to unlock the next for all cars. Existing qualifying
-records count; personal bests never raise the unlocking requirement.
+Browse all three tracks with Up/Down; the selected course shows a route map and
+five checkpoints. Earn bronze with any car, with or without assist, to unlock the
+next course for all cars. Personal bests never raise the unlocking requirement.
+Finch has the most generous bronze target. X toggles light countersteering in the
+car selector (Space on keyboard); it is off by default and never follows the road.
+Bracken is a 1.78km technical stage with tightening corners, a double apex and a
+narrow bridge. Sunmeadow is a 1.33km coastal sprint with a sharp chicane and sand
+mid-corner. Frostpine is a 2.37km endurance stage with switchbacks, ice and a
+mountain tunnel. Each has its own five checkpoint positions and authored elevation.
 
 The title cycles through driving demonstrations with tracking, roadside and
 raised cameras. Press A on PicoSystem (Enter on keyboard, Go on touch) to continue.
 After finishing, the actual run replays with records hidden. X toggles the five
 gate comparisons against the default target and the prior personal best; Space
 on keyboard or Records on touch does the same. A retries, B returns to tracks.
-Sound can be toggled on the title/pause screens with X (M on keyboard), or from
-the browser's mute button. The setting persists alongside records.
+X toggles sound on the title (M on keyboard). Pause opens Resume, Restart,
+Options and Courses; Up/Down selects and A confirms. Options contains sound and
+pace notes. The browser also has a mute icon. These settings persist.
+Pace notes announce the next corner: 1 is tightest and 6 fastest, with tightening,
+double-apex, crest, narrow-bridge and tunnel warnings. The first countdown teaches
+drift. Engine pitch steps through gears and buzzes at the limiter. The PicoSystem
+LED pulses amber during countdown, flashes green/red at splits, and white at finish.
 
 ## Play
 
@@ -45,7 +56,9 @@ Start with Finch 1300; brake before tight bends, release as you turn, and drift 
 
 | Action | Keyboard | Standard gamepad | PicoSystem |
 | --- | --- | --- | --- |
-| Steer / select | Left / Right | D-pad / left stick | D-pad |
+| Steer / choose car | Left / Right | D-pad / left stick | Left / Right |
+| Choose course / menu option | Up / Down | D-pad / left stick | Up / Down |
+| Toggle steering assist (car selector) | Space | X | X |
 | Gas | Up / Z | RT / A | A |
 | Brake / reverse | Down / X | LT / B | B |
 | Drift | Space | X | X |
@@ -56,8 +69,8 @@ Start with Finch 1300; brake before tight bends, release as you turn, and drift 
 Browser input is captured while the game has focus. Leaving the tab or window
 pauses racing; resume explicitly. Start play to enable audio. Browser records
 and the last chosen car/course are saved locally; unavailable storage leaves
-session-only records. Device records are independent. Existing course-v3 C++
-Bracken Ridge records migrate to Kestrel GT only.
+session-only records. Device records are independent. The redesigned courses use
+a new save format; earlier times and settings are intentionally discarded.
 
 To install on PicoSystem, connect USB, hold **X** while switching it on, then copy
 `gravelbyte.uf2` onto **RPI-RP2**. The device restarts automatically.
@@ -111,7 +124,7 @@ clearance and browser integration. Successful main builds publish GitHub Pages;
 the playable WASM, downloadable UF2, version and checksums come from one commit.
 The stable gravelbyte.uf2 download URL remains available. SHA256SUMS lists the
 versioned asset paths. Pico saves alternate between two flash sectors, preserving
-the previous valid save during an erase or write. Legacy records migrate on save.
+the previous valid save during an erase or write. Old save formats are rejected.
 Pull requests build/test without deployment.
 
 ## Design and validation
@@ -131,7 +144,8 @@ and report that workload in each result. `-DGRAVELBYTE_BENCHMARK_START=6` starts
 course for a focused rerun. Restore the player build after benchmarking. Never flash
 until the intended device is identified and a full flash backup is verified.
 `-DGRAVELBYTE_SMOKE=ON` builds a separate real-save diagnostic: it toggles sound,
-changes car, starts a race, pauses, toggles sound again and resumes. It prints
+changes car, starts a race, changes sound and pace-note options while paused,
+and resumes. It prints
 `SAVE_OK` after read-back verification and `SMOKE_DONE` after reaching racing.
 Do not combine the two diagnostic options. Always restore the normal player.
 The board is explicitly `pimoroni_picosystem`: the generic Pico's 2MiB flash
@@ -152,7 +166,7 @@ The Pascal experiment belongs to [FemtoPascal](https://github.com/frostney/Femto
 Use descriptive PascalCase identifiers in owned C++ (`GravelByte` namespace),
 and descriptive camelCase bindings and properties in browser JavaScript.
 Platform entry points and external API names retain their required spelling.
-Run `clang-tidy -p build src/game.cpp src/render.cpp src/desktop_main.cpp tests/*.cpp`
+Run `python3 tools/check_cpp.py`
 for naming checks, alongside the existing C++ and web format checks. CI enforces
 the C++ naming rules. Keep save layouts and serialized keys compatible when
 renaming fields.

@@ -23,12 +23,12 @@ test('keyboard menus, pause, records selections and reload', async ({ page: page
   await expect(game).toHaveAttribute('data-car', '2');
   await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '2');
-  await press(page, 'ArrowRight');
-  await press(page, 'ArrowRight');
+  await press(page, 'ArrowDown');
+  await press(page, 'ArrowDown');
   await expect(game).toHaveAttribute('data-track', '2');
   await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '2');
-  await press(page, 'ArrowRight');
+  await press(page, 'ArrowDown');
   await expect(game).toHaveAttribute('data-track', '0');
   await press(page, 'Enter');
   await expect(game).toHaveAttribute('data-mode', '3');
@@ -182,8 +182,12 @@ test('gamepad activation and storage denied fallback', async ({ page: page }) =>
   await expect(page.locator('#save-status')).toContainText('session only');
   await button(9);
   await expect(game).toHaveAttribute('data-mode', '5');
-  await button(1);
-  await expect(game).toHaveAttribute('data-mode', '1');
+  await button(13);
+  await button(13);
+  await button(13);
+  await expect(page.locator('#game-status')).toContainText('COURSES');
+  await button(0);
+  await expect(game).toHaveAttribute('data-mode', '2');
 });
 for (const [width, height, touch] of [
   [1366, 768, false],
@@ -265,7 +269,7 @@ test('mixed release executable is rejected before play', async ({ page: page }) 
   await expect(page.locator('#play')).toBeDisabled();
 });
 test('corrupt and unavailable storage preserve playable controls', async ({ page: page }) => {
-  await page.addInitScript(() => localStorage.setItem('gravelbyte.records.v1', '[1,2,3]'));
+  await page.addInitScript(() => localStorage.setItem('gravelbyte.records.v4', '[1,2,3]'));
   await play(page);
   await expect(page.locator('#save-status')).toContainText('could not be restored');
   await press(page, 'Enter');
@@ -419,4 +423,41 @@ test('audio initializes and survives mute toggles', async ({ page: page }) => {
     contexts: 1,
     oscillators: 1,
   });
+});
+
+test('assist and pace notes are accessible and survive reload', async ({ page }) => {
+  await play(page);
+  const activate = async (button) => {
+    await button.focus();
+    await button.press('Enter');
+  };
+  await activate(page.getByRole('button', { name: 'Choose car', exact: true }));
+  await expect(page.locator('#game-status')).toContainText('Steering assist off');
+  await activate(page.getByRole('button', { name: 'Toggle steering assist' }));
+  await expect(page.locator('#game-status')).toContainText('Steering assist on');
+  await activate(page.getByRole('button', { name: 'Choose track', exact: true }));
+  await activate(page.getByRole('button', { name: 'Start race', exact: true }));
+  await expect(page.locator('#game')).toHaveAttribute('data-mode', '3');
+  await press(page, 'p');
+  const next = page.getByRole('button', { name: 'Next choice', exact: true });
+  await activate(next);
+  await activate(next);
+  await expect(page.locator('#game-status')).toContainText('OPTIONS');
+  await activate(page.getByRole('button', { name: 'Select option', exact: true }));
+  await activate(next);
+  await expect(page.locator('#game-status')).toContainText('PACE NOTES ON');
+  await activate(page.getByRole('button', { name: 'Select option', exact: true }));
+  await expect(page.locator('#game-status')).toContainText('PACE NOTES OFF');
+  await page.reload();
+  await activate(page.getByRole('button', { name: 'Play Gravelbyte', exact: true }));
+  await press(page, 'Enter');
+  await expect(page.locator('#game-status')).toContainText('Steering assist on');
+  await press(page, 'Enter');
+  await press(page, 'Enter');
+  await press(page, 'p');
+  await press(page, 'ArrowDown');
+  await press(page, 'ArrowDown');
+  await press(page, 'Enter');
+  await press(page, 'ArrowDown');
+  await expect(page.locator('#game-status')).toContainText('PACE NOTES OFF');
 });

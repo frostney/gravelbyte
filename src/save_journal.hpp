@@ -11,8 +11,9 @@ struct SaveSlot {
   SaveData Data;
   uint32_t Checksum;
 };
-static_assert(sizeof(SaveSlot) <= 256);
-constexpr uint32_t JournalMagic = 0x47524a31;
+constexpr std::size_t SaveProgramBytes = (sizeof(SaveSlot) + 255) / 256 * 256;
+static_assert(SaveProgramBytes <= 4096);
+constexpr uint32_t JournalMagic = 0x47524a34;
 inline uint32_t SlotChecksum(const SaveSlot &Slot) {
   uint32_t Hash = Tuning::HashOffsetBasis;
   const auto *Bytes = reinterpret_cast<const uint8_t *>(&Slot);
@@ -38,18 +39,27 @@ inline SaveSlot MakeSlot(const SaveData &Data, uint32_t Sequence) {
   return Slot;
 }
 enum class SaveResult { Unchanged, Saved, Failed };
-inline SaveResult StoreSave(const SaveData &Data, const SaveSlot &FirstSlot,
-                            const SaveSlot &SecondSlot, void (*Write)(int, const SaveSlot &)) {
+inline SaveResult StorePreparedSave(SaveSlot &Next, const SaveSlot &FirstSlot,
+                                    const SaveSlot &SecondSlot,
+                                    void (*Write)(int, const SaveSlot &)) {
   const int Current = NewestSlot(FirstSlot, SecondSlot);
   const auto &Active = Current == 0 ? FirstSlot : SecondSlot;
-  if (Current >= 0 && std::memcmp(&Active.Data, &Data, sizeof(Data)) == 0)
+  if (Current >= 0 && std::memcmp(&Active.Data, &Next.Data, sizeof(Next.Data)) == 0)
     return SaveResult::Unchanged;
-  // Slot 1 also contains the old non-journal format; first migration uses 0.
+  // First save starts in slot zero; subsequent writes preserve the active slot.
   const int Target = Current == 0 ? 1 : 0;
-  const auto Next = MakeSlot(Data, Current < 0 ? 0 : Active.Sequence + 1);
+  Next.Magic = JournalMagic;
+  Next.Sequence = Current < 0 ? 0 : Active.Sequence + 1;
+  Next.Checksum = SlotChecksum(Next);
   Write(Target, Next);
   const auto &Stored = Target == 0 ? FirstSlot : SecondSlot;
   return ValidSlot(Stored) && std::memcmp(&Stored, &Next, sizeof(Next)) == 0 ? SaveResult::Saved
                                                                              : SaveResult::Failed;
+}
+inline SaveResult StoreSave(const SaveData &Data, const SaveSlot &FirstSlot,
+                            const SaveSlot &SecondSlot, void (*Write)(int, const SaveSlot &)) {
+  SaveSlot Next{};
+  Next.Data = Data;
+  return StorePreparedSave(Next, FirstSlot, SecondSlot, Write);
 }
 } // namespace GravelByte
