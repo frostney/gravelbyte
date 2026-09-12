@@ -18,11 +18,6 @@
     "src/test_driver.hpp": "f251cb1ef6db5dc67c2edd84a718b496fdef37a8f2cd7c568da50be438770e53"
   },
   "source_scope": "The measured shared gameplay and rendering sources are identical across both benchmark artifacts and the validation player. The extended/smoke harness adds case identity and reboot diagnostics after the nine-race artifact.",
-  "current_platform_source_sha256": {
-    "src/pico_main.cpp": "fe8ba450bf2b3891deaa5e2849d399fc5f2f54e047c3e2e29b7126e9b3454c3f",
-    "src/web_main.cpp": "a42f111dc94317f89233c51a51afe8af539d2712ac7a85928546e7842a7cfa38",
-    "src/desktop_main.cpp": "2dd24ae645f125bf9fc1f3f990116ac522f5995fb7e538375eac7d5e18e1ee4a"
-  },
   "firmware_sha256": {
     "ghost-lod-measurement.uf2": "f956de1b245307287caed2336a1727a72e563eb0da7f900fcc1bb375d70d4116",
     "extended-measurement.uf2": "dd4e13b701377c3611aaf0a5c612e74a5a74c4dcd46ad5cf2f98d72f2ee6e4bd",
@@ -370,11 +365,47 @@
     "ghost-device-full-model.log": {
       "local_path": "output/preview/ghost-device-full-model.log",
       "sha256": "61629191bab6c82a46b4626fbe878d22a269701e53f5fe1b2a84ebe55b21a63b"
+    },
+    "led-followup-race.log": {
+      "local_path": "output/preview/led-followup-race.log",
+      "sha256": "5953fd4fc48849796426da9641dc659a6288958cd70642f5c411873a8d0e61de"
     }
   },
   "limits": [
     "Representative variant/seed hardware runs complement the wider native corpus, not every possible seed.",
     "No physical electrical power-cut testing; byte-by-byte publication interruption is modeled on host.",
     "Automated drives do not establish human difficulty calibration."
-  ]
+  ],
+  "initial_validation_platform_source_sha256": {
+    "src/pico_main.cpp": "fe8ba450bf2b3891deaa5e2849d399fc5f2f54e047c3e2e29b7126e9b3454c3f",
+    "src/web_main.cpp": "a42f111dc94317f89233c51a51afe8af539d2712ac7a85928546e7842a7cfa38",
+    "src/desktop_main.cpp": "2dd24ae645f125bf9fc1f3f990116ac522f5995fb7e538375eac7d5e18e1ee4a"
+  },
+  "neutral_challenge_led_followup": {
+    "reason": "First challenge has no comparison time; checkpoint LED stays neutral like the HUD.",
+    "source_sha256": "17291f2f583cf89819e0befe5f7b0b2a3e7dd479acae48829da7c8d7eb204ac6",
+    "run": {
+      "track": 2,
+      "car": 2,
+      "frames": 3079,
+      "mean_us": 25337,
+      "max_us": 25350,
+      "below30": 0,
+      "recoveries": 0,
+      "time_ms": 78023,
+      "dropped": 0,
+      "overflow_frames": 0,
+      "rendered_frames": 3079,
+      "audio": 0,
+      "ghost_frames": 0,
+      "variant": 0,
+      "challenge": 1,
+      "seed": 4294967295
+    },
+    "firmware_sha256": "05925e7d8930ccbbb4713d7edb2003e0b81815b92986f5b20d5276bd4c5d5cba",
+    "normal_player_sha256": "8543b8848984b5d90be51ec7d328e7f4812bdd0d29bc5131fd78fa5238ccb8d0",
+    "reserved_flash_unchanged": true,
+    "normal_player_restored": true,
+    "full_backup_sha256": "8b4700257ee94cc44dd4c0ef32c7381f827fcf78af6631d85352dcff34a16429"
+  }
 }

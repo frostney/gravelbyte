@@ -88,6 +88,12 @@ record identity. The original reserved 4MiB, including player records and mute
 preference, was then restored byte-for-byte. The normal player was flash-verified
 and observed at its title screen. Its static allocation is 237,816 bytes.
 [Hardware measurements and artifact identities](replay-device-results.json)
-retain accepted results and the rejected full-detail-ghost result separately. Automated driving establishes
+retain accepted results and the rejected full-detail-ghost result separately. A follow-up keeps the checkpoint LED neutral when a challenge has no previous
+best, matching the HUD. Its focused silent `FFFFFFFF` device rerun passed
+3,079 frames with a 25.350ms worst frame and zero slow frames, recoveries or
+dropped geometry; reserved flash remained unchanged and the updated normal
+player was restored.
+
+Automated driving establishes
 completion and regression coverage; human difficulty tuning still needs player
 feedback.

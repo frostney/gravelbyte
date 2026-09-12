@@ -320,6 +320,7 @@ void update(uint32_t) {
     led(GravelByte::Tuning::Feedback::Brightness, GravelByte::Tuning::Feedback::Brightness,
         GravelByte::Tuning::Feedback::Brightness);
   } else if (GameState.CurrentMode == GravelByte::GameMode::Racing &&
+             (!GameState.Challenge || GameState.ReferenceSplits.back() > 0) &&
              GameState.SplitMessage > GravelByte::Tuning::Physics::MessageSeconds -
                                           GravelByte::Tuning::Feedback::SplitSeconds) {
     led(GameState.SplitDelta > 0 ? GravelByte::Tuning::Feedback::Brightness : 0,
